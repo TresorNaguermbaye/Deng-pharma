@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Rapport des alertes</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 2cm; }
+        h1 { color: #0F1A2C; text-align: center; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+    </style>
+</head>
+<body>
+    <h1>Rapport des alertes</h1>
+    <table>
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Utilisateur</th>
+                <th>Type</th>
+                <th>Message</th>
+                <th>Lu</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for notif in notifs %}
+            <tr>
+                <td>{{ notif.created_at|date:"d/m/Y H:i" }}</td>
+                <td>{{ notif.user.email }}</td>
+                <td>{{ notif.get_type_display }}</td>
+                <td>{{ notif.message }}</td>
+                <td>{{ notif.is_read|yesno:"Oui,Non" }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</body>
+</html>

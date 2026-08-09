@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Rapport des stocks</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 2cm; }
+        h1 { color: #0F1A2C; text-align: center; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+    </style>
+</head>
+<body>
+    <h1>État des stocks</h1>
+    <table>
+        <thead>
+            <tr>
+                <th>Médicament</th>
+                <th>Lot</th>
+                <th>Quantité</th>
+                <th>Expiration</th>
+                <th>Prix unitaire</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for lot in lots %}
+            <tr>
+                <td>{{ lot.medicine.commercial_name }}</td>
+                <td>{{ lot.batch_number }}</td>
+                <td>{{ lot.quantity }}</td>
+                <td>{{ lot.expiry_date|date:"d/m/Y" }}</td>
+                <td>{{ lot.purchase_price_per_unit }} FCFA</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <p>Valeur totale du stock : {{ total_value }} FCFA</p>
+</body>
+</html>

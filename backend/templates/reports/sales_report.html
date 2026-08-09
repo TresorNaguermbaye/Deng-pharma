@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Rapport des ventes</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 2cm; }
+        h1 { color: #0F1A2C; text-align: center; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        .total { text-align: right; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>Rapport des ventes</h1>
+    {% if start_date or end_date %}
+    <p>Période : du {{ start_date|default:"début" }} au {{ end_date|default:"fin" }}</p>
+    {% endif %}
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Date</th>
+                <th>Client</th>
+                <th>Pharmacien</th>
+                <th>Total</th>
+                <th>Paiement</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for sale in sales %}
+            <tr>
+                <td>{{ sale.id }}</td>
+                <td>{{ sale.created_at|date:"d/m/Y H:i" }}</td>
+                <td>{{ sale.customer_name|default:"-" }}</td>
+                <td>{{ sale.user.email }}</td>
+                <td>{{ sale.total_amount }} FCFA</td>
+                <td>{{ sale.get_payment_method_display }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="6">Aucune vente trouvée.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <p class="total">Total général : {{ total }} FCFA</p>
+</body>
+</html>
