@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -11,14 +10,10 @@ import { Progress } from "@/components/ui/progress";
 import { Package, AlertTriangle, Clock } from "lucide-react";
 
 export default function InventoryPage() {
-  const router = useRouter();
   const [lots, setLots] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    if (!api.getToken()) { router.push("/login"); return; }
-    loadStocks();
-  }, []);
+  useEffect(() => { loadStocks(); }, []);
 
   const loadStocks = async () => {
     try {
@@ -47,7 +42,7 @@ export default function InventoryPage() {
   };
 
   return (
-    <div className="p-8 space-y-6">
+    <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold text-slate-900">Stocks</h1>
         <p className="text-slate-500 mt-1">Gérez vos lots et surveillez les expirations</p>

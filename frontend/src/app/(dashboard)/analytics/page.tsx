@@ -1,0 +1,260 @@
+// src/app/(dashboard)/analytics/page.tsx
+"use client";
+
+import { useEffect, useState } from "react";
+import { api } from "@/lib/api";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  TrendingUp, TrendingDown, DollarSign, ShoppingCart, Package,
+  BarChart3, PieChart, Target, Activity, Percent,
+} from "lucide-react";
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, PieChart as RPieChart, Pie, Cell,
+} from "recharts";
+
+const COLORS = [
+  "#0ABAB5", "#3B82F6", "#8B5CF6", "#F59E0B", "#EF4444", "#10B981",
+  "#EC4899", "#6366F1", "#14B8A6", "#F97316",
+];
+
+export default function AnalyticsPage() {
+  const [kpi, setKpi] = useState<any>(null);
+  const [charts, setCharts] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => { loadData(); }, []);
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const [kpiData, chartsData] = await Promise.all([
+        api.getDashboardKPIs(),
+        api.getSalesCharts().catch(() => null),
+      ]);
+      setKpi(kpiData);
+      setCharts(chartsData);
+    } catch (err) {
+      console.error("Erreur chargement analytics:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const formatFCFA = (v: number) =>
+    v ? new Intl.NumberFormat("fr-FR").format(v) + " FCFA" : "0 FCFA";
+  const formatNumber = (v: number) =>
+    v ? new Intl.NumberFormat("fr-FR").format(v) : "0";
+
+  // ----- Données réelles issues de l'API (pas de fallback simulé) -----
+  const dailySales = charts?.daily_sales || [];
+  const categories = charts?.categories || [];
+  const topMedicines = charts?.top_medicines || [];
+
+  // ----- KPI calculés (Business Intelligence) -----
+  const totalSales = dailySales.reduce((sum: number, d: any) => sum + d.orders, 0);
+  const totalRevenue = dailySales.reduce((sum: number, d: any) => sum + d.revenue, 0);
+  const averageBasket = totalSales > 0 ? totalRevenue / totalSales : 0;
+  const marginRate = kpi?.estimated_profit && kpi?.ca_month
+    ? ((kpi.estimated_profit / kpi.ca_month) * 100)
+    : 0;
+  const outOfStockRate = kpi?.total_medicines
+    ? ((kpi.out_of_stock / kpi.total_medicines) * 100)
+    : 0;
+  const stockTurnover = kpi?.ca_month && kpi?.stock_value
+    ? (kpi.ca_month / kpi.stock_value).toFixed(1)
+    : "0";
+
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <Skeleton className="h-8 w-64" />
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {[...Array(8)].map((_, i) => <Skeleton key={i} className="h-32 rounded-xl" />)}
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <Skeleton className="h-80 rounded-xl" />
+          <Skeleton className="h-80 rounded-xl" />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-3xl font-bold text-slate-900">Analytics</h1>
+        <p className="text-slate-500 mt-1">Analysez vos performances et tendances</p>
+      </div>
+
+      {/* ---- KPIs principaux (CA, ventes, stock, profit) ---- */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <KpiCard
+          title="CA Mensuel"
+          value={formatFCFA(kpi?.ca_month || 0)}
+          icon={<DollarSign className="w-5 h-5" />}
+          bg="from-green-50 to-emerald-50"
+          color="text-green-600"
+        />
+        <KpiCard
+          title="Ventes Aujourd'hui"
+          value={formatNumber(kpi?.sales_today)}
+          icon={<ShoppingCart className="w-5 h-5" />}
+          bg="from-blue-50 to-cyan-50"
+          color="text-blue-600"
+        />
+        <KpiCard
+          title="Valeur du Stock"
+          value={formatFCFA(kpi?.stock_value)}
+          icon={<Package className="w-5 h-5" />}
+          bg="from-purple-50 to-violet-50"
+          color="text-purple-600"
+        />
+        <KpiCard
+          title="Profit Estimé"
+          value={formatFCFA(kpi?.estimated_profit)}
+          icon={<TrendingUp className="w-5 h-5" />}
+          bg="from-yellow-50 to-amber-50"
+          color="text-yellow-600"
+        />
+      </div>
+
+      {/* ---- KPI avancés (Business Intelligence) ---- */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <KpiCard
+          title="Panier moyen"
+          value={formatFCFA(averageBasket)}
+          icon={<Target className="w-5 h-5" />}
+          bg="from-rose-50 to-pink-50"
+          color="text-pink-600"
+        />
+        <KpiCard
+          title="Taux de marge"
+          value={`${marginRate.toFixed(1)}%`}
+          icon={<Percent className="w-5 h-5" />}
+          bg="from-indigo-50 to-blue-50"
+          color="text-indigo-600"
+        />
+        <KpiCard
+          title="Rotation du stock"
+          value={stockTurnover}
+          icon={<Activity className="w-5 h-5" />}
+          bg="from-cyan-50 to-teal-50"
+          color="text-cyan-600"
+        />
+        <KpiCard
+          title="Taux de rupture"
+          value={`${outOfStockRate.toFixed(1)}%`}
+          icon={<Target className="w-5 h-5" />}
+          bg="from-orange-50 to-red-50"
+          color="text-red-600"
+        />
+      </div>
+
+      {/* ---- Graphiques côte à côte ---- */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Ventes 7 derniers jours */}
+        <Card className="border-0 shadow-md">
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle className="text-lg">Ventes des 7 derniers jours</CardTitle>
+            <BarChart3 className="w-5 h-5 text-slate-400" />
+          </CardHeader>
+          <CardContent>
+            {dailySales.length > 0 ? (
+              <ResponsiveContainer width="100%" height={350}>
+                <BarChart data={dailySales}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis dataKey="day_name" fontSize={12} />
+                  <YAxis tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} fontSize={12} />
+                  <Tooltip formatter={(v: number) => [formatFCFA(v), "Chiffre d'affaires"]} />
+                  <Bar dataKey="revenue" fill="#0ABAB5" radius={[8, 8, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-[350px] flex items-center justify-center text-slate-400">
+                Aucune vente enregistrée
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Répartition par catégorie */}
+        <Card className="border-0 shadow-md">
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle className="text-lg">Répartition par catégorie</CardTitle>
+            <PieChart className="w-5 h-5 text-slate-400" />
+          </CardHeader>
+          <CardContent>
+            {categories.length > 0 ? (
+              <div className="flex items-center">
+                <ResponsiveContainer width="60%" height={300}>
+                  <RPieChart>
+                    <Pie
+                      data={categories}
+                      cx="50%"
+                      cy="50%"
+                      outerRadius={100}
+                      dataKey="revenue"
+                      nameKey="name"
+                      label={({ percent }) => `${(percent * 100).toFixed(0)}%`}
+                    >
+                      {categories.map((_: any, idx: number) => (
+                        <Cell key={idx} fill={COLORS[idx % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip formatter={(v: number) => [formatFCFA(v), "CA"]} />
+                  </RPieChart>
+                </ResponsiveContainer>
+                <div className="w-40 space-y-2">
+                  {categories.map((cat: any, i: number) => (
+                    <div key={i} className="flex items-center gap-2 text-sm">
+                      <div
+                        className="w-3 h-3 rounded-full"
+                        style={{ backgroundColor: COLORS[i % COLORS.length] }}
+                      />
+                      <span className="text-slate-600">{cat.name}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="h-[300px] flex items-center justify-center text-slate-400">
+                Aucune vente enregistrée
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+/** Petite carte KPI réutilisable */
+function KpiCard({
+  title,
+  value,
+  icon,
+  bg,
+  color,
+}: {
+  title: string;
+  value: string | number;
+  icon: React.ReactNode;
+  bg: string;
+  color: string;
+}) {
+  return (
+    <Card className={`border-0 shadow-md bg-gradient-to-br ${bg}`}>
+      <CardContent className="p-4 flex items-center gap-3">
+        <div className={`p-2 rounded-full bg-white ${color}`}>{icon}</div>
+        <div>
+          <p className="text-xs text-slate-500">{title}</p>
+          <p className="text-xl font-bold text-slate-800">{value}</p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}

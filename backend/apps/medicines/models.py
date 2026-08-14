@@ -45,3 +45,16 @@ class Medicine(models.Model):
 
     def __str__(self):
         return f"{self.commercial_name} ({self.dci})"
+    
+class Supplier(models.Model):
+    name = models.CharField(max_length=200, verbose_name="Nom du fournisseur")
+    contact_name = models.CharField(max_length=100, blank=True)
+    phone = models.CharField(max_length=20, blank=True)
+    email = models.EmailField(blank=True)
+
+    class Meta:
+        verbose_name = "Fournisseur"
+        verbose_name_plural = "Fournisseurs"
+
+    def __str__(self):
+        return self.name

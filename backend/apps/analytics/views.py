@@ -6,10 +6,92 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.utils.timezone import now
 
-from apps.sales.models import Sale
+from apps.sales.models import Sale, SaleItem
 from apps.medicines.models import Medicine, Category
 from apps.inventory.models import StockLot
 from apps.accounts.permissions import AuditeurReadOnly
+from django.db.models.functions import Coalesce
+
+
+class TodaySalesView(APIView):
+    permission_classes = [IsAuthenticated]
+    def get(self, request):
+        today = now().date()
+        sales = Sale.objects.filter(created_at__date=today).prefetch_related('items__medicine').order_by('-created_at')
+        data = []
+        for sale in sales:
+            items = [{
+                'medicine': item.medicine.commercial_name,
+                'quantity': item.quantity,
+                'price': float(item.unit_price)
+            } for item in sale.items.all()]
+            data.append({
+                'id': sale.id,
+                'customer': sale.customer_name or 'Comptoir',
+                'total': float(sale.total_amount),
+                'payment': sale.get_payment_method_display(),
+                'time': sale.created_at.strftime('%H:%M'),
+                'items': items
+            })
+        return Response(data)
+
+class OutOfStockView(APIView):
+    permission_classes = [IsAuthenticated]
+    def get(self, request):
+        today = date.today()
+        medicines = Medicine.objects.all()
+        out = []
+        for med in medicines:
+            total = StockLot.objects.filter(medicine=med, expiry_date__gte=today).aggregate(t=Sum('quantity'))['t'] or 0
+            if total == 0:
+                out.append({
+                    'id': med.id,
+                    'name': med.commercial_name,
+                    'category': med.category.name if med.category else '',
+                    'min_stock': med.min_stock,
+                    'current_stock': 0,
+                    'recommended_order': med.min_stock * 2 if med.min_stock else 30
+                })
+        return Response(out)
+
+class LowStockView(APIView):
+    permission_classes = [IsAuthenticated]
+    def get(self, request):
+        today = date.today()
+        medicines = Medicine.objects.all()
+        low = []
+        for med in medicines:
+            total = StockLot.objects.filter(medicine=med, expiry_date__gte=today).aggregate(t=Sum('quantity'))['t'] or 0
+            if 0 < total <= med.min_stock:
+                low.append({
+                    'id': med.id,
+                    'name': med.commercial_name,
+                    'category': med.category.name if med.category else '',
+                    'min_stock': med.min_stock,
+                    'current_stock': total,
+                    'to_order': med.min_stock * 2 - total
+                })
+        return Response(low)
+
+class ExpiringSoonView(APIView):
+    permission_classes = [IsAuthenticated]
+    def get(self, request):
+        today = date.today()
+        limit = today + timedelta(days=90)
+        lots = StockLot.objects.filter(expiry_date__lte=limit, expiry_date__gte=today, quantity__gt=0).select_related('medicine').order_by('expiry_date')
+        data = []
+        for lot in lots:
+            data.append({
+                'id': lot.id,
+                'medicine': lot.medicine.commercial_name,
+                'batch': lot.batch_number,
+                'quantity': lot.quantity,
+                'expiry_date': lot.expiry_date.isoformat(),
+                'days_left': (lot.expiry_date - today).days
+            })
+        return Response(data)
+
+
 
 class DashboardKPIView(APIView):
     """Retourne les indicateurs clés pour le tableau de bord principal"""
@@ -51,8 +133,15 @@ class DashboardKPIView(APIView):
         sales_today = Sale.objects.filter(created_at__date=today).count()
 
         # Ruptures
-        out_of_stock_ids = StockLot.objects.filter(expiry_date__gte=today).values('medicine').annotate(total_qty=Sum('quantity')).filter(total_qty=0).values('medicine')
-        out_of_stock_count = Medicine.objects.filter(id__in=out_of_stock_ids).count()
+
+
+        # Nouvelle version (cohérente avec OutOfStockView)
+        out_of_stock_count = 0
+        for med in Medicine.objects.all():
+            total = StockLot.objects.filter(medicine=med, expiry_date__gte=today).aggregate(t=Sum('quantity'))['t'] or 0
+            if total == 0:
+                out_of_stock_count += 1
+
 
         # Stock faible
         low_stock_ids = StockLot.objects.filter(expiry_date__gte=today).values('medicine').annotate(total_qty=Sum('quantity')).filter(total_qty__gt=0, total_qty__lte=F('medicine__min_stock')).values('medicine')
@@ -85,3 +174,52 @@ class DashboardKPIView(APIView):
             'estimated_profit': profit,
         }
         return Response(data)
+
+class SalesChartView(APIView):
+    permission_classes = [IsAuthenticated, AuditeurReadOnly]
+
+    def get(self, request):
+        today = now().date()
+
+        # 1. Ventes quotidiennes des 7 derniers jours
+        daily_sales = []
+        for i in range(6, -1, -1):
+            day = today - timedelta(days=i)
+            total = Sale.objects.filter(created_at__date=day).aggregate(
+                total=Coalesce(Sum('total_amount'), 0.0, output_field=DecimalField())
+            )['total']
+            count = Sale.objects.filter(created_at__date=day).count()
+            daily_sales.append({
+                'date': day.isoformat(),
+                'day_name': ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'][day.weekday()],
+                'revenue': float(total),
+                'orders': count
+            })
+
+        # 2. Top médicaments (quantité vendue et CA)
+        top_meds = SaleItem.objects.values('medicine__commercial_name').annotate(
+            total_qty=Sum('quantity'),
+            total_revenue=Sum(F('quantity') * F('unit_price'))
+        ).order_by('-total_qty')[:10]
+
+        top_medicines = [{
+            'name': item['medicine__commercial_name'],
+            'quantity': item['total_qty'],
+            'revenue': float(item['total_revenue'])
+        } for item in top_meds]
+
+        # 3. Ventes par catégorie
+        cat_sales = SaleItem.objects.values('medicine__category__name').annotate(
+            total=Sum(F('quantity') * F('unit_price'))
+        ).order_by('-total')
+
+        categories = [{
+            'name': item['medicine__category__name'] or 'Sans catégorie',
+            'revenue': float(item['total'])
+        } for item in cat_sales]
+
+        return Response({
+            'daily_sales': daily_sales,
+            'top_medicines': top_medicines,
+            'categories': categories
+        })

@@ -19,5 +19,6 @@ class User(AbstractUser):
         verbose_name="Rôle"
     )
 
+    has_completed_onboarding = models.BooleanField(default=False)
     def __str__(self):
         return f"{self.email} ({self.get_role_display()})"

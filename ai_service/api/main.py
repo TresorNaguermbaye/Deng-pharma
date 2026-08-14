@@ -13,6 +13,10 @@ import numpy as np
 import joblib
 import os
 from datetime import date, timedelta
+import sqlite3
+
+# Chemin vers la base de données SQLite de Django
+DB_PATH = os.path.join(os.path.dirname(__file__), '..', '..', 'backend', 'db.sqlite3')
 
 # ==========================================
 # CHARGEMENT DU MODÈLE
@@ -62,6 +66,7 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, 
 # ==========================================
 class PredictionRequest(BaseModel):
     medicine_id: str = "MED003"
+    medicine_name: Optional[str] = None   # <-- ajout pour recevoir le nom commercial
     days_ahead: int = 7
 
 class StockAnalysisRequest(BaseModel):
@@ -100,66 +105,133 @@ def health():
         "features": features_list
     }
 
-# ---------- PRÉVISION DES VENTES ----------
-@app.post("/predict")
+# ---------- FONCTIONS UTILITAIRES POUR L'HISTORIQUE ----------
+
+
+def get_commercial_name_from_uuid(medicine_uuid: str) -> Optional[str]:
+    """Retourne le nom commercial à partir d'un UUID Django (sans tirets en base)."""
+    conn = sqlite3.connect(DB_PATH)
+    # Enlever les tirets car la base stocke l'UUID sans tirets (char(32))
+    clean_uuid = medicine_uuid.replace('-', '')
+    query = "SELECT commercial_name FROM medicines_medicine WHERE id = ?"
+    cursor = conn.execute(query, (clean_uuid,))
+    row = cursor.fetchone()
+    conn.close()
+    return row[0] if row else None
+
+
+def get_medicine_history(identifier: str, medicine_name: Optional[str] = None, days: int = 30):
+    conn = sqlite3.connect(DB_PATH)
+    # Si un nom est fourni, on l'utilise directement
+    if medicine_name:
+        search_name = medicine_name
+    else:
+        # Sinon, essayer de retrouver le nom via l'UUID
+        search_name = get_commercial_name_from_uuid(identifier)
+        if not search_name:
+            conn.close()
+            return None
+
+    query = """
+        SELECT DATE(s.created_at) AS date, SUM(si.quantity) AS sales
+        FROM sales_saleitem si
+        JOIN sales_sale s ON si.sale_id = s.id
+        JOIN medicines_medicine m ON si.medicine_id = m.id
+        WHERE m.commercial_name = ?
+        GROUP BY DATE(s.created_at)
+        ORDER BY date DESC
+        LIMIT ?
+    """
+    df = pd.read_sql_query(query, conn, params=(search_name, days))
+    conn.close()
+    if df.empty:
+        return None
+    df['date'] = pd.to_datetime(df['date'])
+    df = df.sort_values('date')
+    return [float(x) for x in df['sales'].tolist()]
+
+
+
 @app.post("/predict")
 def predict_sales(request: PredictionRequest):
-    """Prédit les ventes quotidiennes pour les N prochains jours"""
     if model is None:
         raise HTTPException(503, "Modèle non disponible.")
-    
+
     today = date.today()
     predictions = []
-    
-    # Valeurs de base cohérentes pour les lags
-    base_demand = 45  # Demande moyenne quotidienne
-    season_factor = 1.5 if today.month in [6,7,8,9,10] else 1.0
-    
+
+
+    history = get_medicine_history(
+    identifier=request.medicine_id,
+    medicine_name=request.medicine_name,
+    days=30
+    )
+
+    print(f"DEBUG: medicine_name reçu = '{request.medicine_name}', historique trouvé = {history is not None}, longueur = {len(history) if history else 0}")
+
+    # Définir les lags à partir de l'historique, ou utiliser les valeurs par défaut
+    base = 45.0
+    season_factor = 1.5 if today.month in [6, 7, 8, 9, 10] else 1.0
+    default_lag = base * season_factor
+
+    if history and len(history) > 0:
+        # Utiliser les données réelles, même si peu nombreuses
+        lag_1 = history[-1] if len(history) >= 1 else default_lag
+        lag_7 = history[-7] if len(history) >= 7 else (sum(history[-len(history):]) / len(history))
+        lag_30 = history[0] if len(history) >= 1 else base
+        rolling_mean_7 = sum(history[-min(7, len(history)):]) / min(7, len(history))
+        rolling_mean_30 = sum(history) / len(history)
+    else:
+        lag_1 = default_lag
+        lag_7 = default_lag
+        lag_30 = base
+        rolling_mean_7 = default_lag
+        rolling_mean_30 = base
+
     for i in range(request.days_ahead):
         pred_date = today + timedelta(days=i+1)
         dow = pred_date.weekday()
-        
-        # Ajuster selon le jour de la semaine
-        if dow >= 5:  # Weekend
-            dow_factor = 0.6
-        elif dow < 3:  # Début de semaine
-            dow_factor = 1.3
-        else:
-            dow_factor = 1.0
-        
-        # Features cohérentes
         features = {
             'day_of_week': dow,
             'month': pred_date.month,
             'is_weekend': 1 if dow >= 5 else 0,
-            'season': 1 if pred_date.month in [6,7,8,9,10] else 0,
-            'lag_1': base_demand * season_factor * dow_factor,
-            'lag_7': base_demand * season_factor,
-            'lag_30': base_demand,
-            'rolling_mean_7': base_demand * season_factor,
-            'rolling_mean_30': base_demand,
+            'season': 1 if pred_date.month in [6, 7, 8, 9, 10] else 0,
+            'lag_1': lag_1,
+            'lag_7': lag_7,
+            'lag_30': lag_30,
+            'rolling_mean_7': rolling_mean_7,
+            'rolling_mean_30': rolling_mean_30,
             'price': 2500
         }
-        
         X = pd.DataFrame([features])[features_list]
         pred = float(model.predict(X)[0])
-        
-        # Garantir des valeurs positives
-        pred = max(0, pred)
-        
+        pred = max(0.0, pred)
+        lower = max(0.0, pred * 0.7)
+        upper = pred * 1.3
+
         predictions.append({
             "date": pred_date.isoformat(),
             "predicted_sales": round(pred, 1),
-            "lower_bound": round(max(0, pred * 0.7), 1),
-            "upper_bound": round(pred * 1.3, 1)
+            "lower_bound": round(lower, 1),
+            "upper_bound": round(upper, 1)
         })
-    
+
+        # Mise à jour récursive des lags
+        lag_30 = lag_7
+        lag_7 = lag_1
+        lag_1 = pred
+        rolling_mean_30 = (rolling_mean_30 * 29 + lag_30) / 30.0
+        rolling_mean_7 = (rolling_mean_7 * 6 + lag_1) / 7.0
+
     return {
         "medicine_id": request.medicine_id,
         "predictions": predictions,
-        "model_version": "v2.0-xgboost-tchad",
-        "today": today.isoformat()
+        "model_version": "v2.0-personalized"
     }
+
+
+
+
 
 # ---------- ANALYSE DE STOCK ----------
 @app.post("/analyze/stock")

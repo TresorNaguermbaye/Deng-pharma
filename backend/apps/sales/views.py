@@ -5,7 +5,8 @@ from django.template.loader import render_to_string
 from weasyprint import HTML
 
 from django.shortcuts import get_object_or_404
-
+from rest_framework.permissions import IsAuthenticated
+from apps.accounts.permissions import CanManageSales
 from .models import Sale
 from .serializers import SaleCreateSerializer, SaleListSerializer
 from apps.accounts.permissions import AuditeurReadOnly
@@ -20,8 +21,7 @@ class CanCreateSale(permissions.BasePermission):
 
 class SaleViewSet(viewsets.ModelViewSet):
     queryset = Sale.objects.prefetch_related('items__medicine').all()
-    permission_classes = [permissions.IsAuthenticated, AuditeurReadOnly, CanCreateSale]
-
+    permission_classes = [IsAuthenticated, CanManageSales]
     def get_serializer_class(self):
         if self.action == 'create':
             return SaleCreateSerializer

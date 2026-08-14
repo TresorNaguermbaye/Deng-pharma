@@ -16,9 +16,10 @@ from apps.inventory.models import StockLot
 from apps.notifications.models import Notification
 from apps.accounts.models import User
 from apps.accounts.permissions import IsAdminRole, AuditeurReadOnly
-
+from rest_framework.permissions import IsAuthenticated
+from apps.accounts.permissions import IsAuditeur
 class BaseReportView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsAuditeur]
 
     def get_format(self, request):
         fmt = request.query_params.get('format', 'pdf').lower()

@@ -2,11 +2,52 @@
 """
 Endpoints Django qui servent de proxy vers le service IA FastAPI
 """
+from apps.inventory.models import StockLot
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
 from ai_client import ai_client
+
+
+
+
+from django.db.models import Sum  # <-- AJOUTER CET IMPORT EN HAUT DU FICHIER
+from datetime import date
+
+class AIRecommendStockView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        # Nettoyer l'UUID (supprime espaces, < >)
+        medicine_id = request.data.get("medicine_id", "").strip().replace('<', '').replace('>', '')
+        if not medicine_id:
+            return Response({"error": "medicine_id requis"}, status=400)
+
+        # Appeler le service IA
+        prediction = ai_client.predict_sales(medicine_id, days_ahead=30)
+        if "error" in prediction:
+            return Response(prediction, status=503)
+
+        preds = prediction.get("predictions", [])
+        avg_daily_demand = sum(p["predicted_sales"] for p in preds) / len(preds) if preds else 0
+
+        total_stock = StockLot.objects.filter(
+            medicine_id=medicine_id,
+            expiry_date__gte=date.today()
+        ).aggregate(total=Sum('quantity'))['total'] or 0
+
+        recommended = max(0, (avg_daily_demand * 30 * 1.2) - total_stock)
+
+        return Response({
+            "medicine_id": medicine_id,
+            "avg_daily_demand": round(avg_daily_demand, 1),
+            "current_stock": total_stock,
+            "recommended_order": round(recommended),
+            "coverage_days": 30,
+        })
+
+
 
 class AIPredictView(APIView):
     """Prévision des ventes par IA"""

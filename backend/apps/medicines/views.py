@@ -2,25 +2,27 @@
 from rest_framework import viewsets, filters, permissions
 from django_filters.rest_framework import DjangoFilterBackend
 from .models import Medicine, Category
+from apps.accounts.permissions import IsAdminOrReadOnly
 from .serializers import (
     MedicineListSerializer,
     MedicineDetailSerializer,
     CategorySerializer
 )
+from rest_framework.permissions import IsAuthenticated
+from apps.accounts.permissions import IsAdminOrReadOnly
 from apps.accounts.permissions import AuditeurReadOnly
 
 class CategoryViewSet(viewsets.ModelViewSet):
     """CRUD complet pour les catégories"""
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
-    permission_classes = [permissions.IsAuthenticated, AuditeurReadOnly]
-
+    permission_classes = [IsAuthenticated, IsAdminOrReadOnly]
 class MedicineViewSet(viewsets.ModelViewSet):
     """
     CRUD complet pour les médicaments avec recherche, filtres et pagination.
     """
     queryset = Medicine.objects.select_related('category').all()
-    permission_classes = [permissions.IsAuthenticated, AuditeurReadOnly]
+    permission_classes = [IsAuthenticated, IsAdminOrReadOnly]
 
     # Filtres et recherche
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]

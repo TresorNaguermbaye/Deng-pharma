@@ -16,7 +16,9 @@ urlpatterns = [
     path('api/reports/stock/', stock_report, name='report-stock'),
     path('api/ai/', include('apps.ai_integration.urls')),
     path('api/reports/alerts/', alert_report, name='report-alerts'),
+    path('api/orders/', include('apps.orders.urls')),
     path('api/reports/users/', user_report, name='report-users'),
+    path('api/notifications/', include('apps.notifications.urls')),
 ]
 
 if settings.DEBUG:

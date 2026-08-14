@@ -1,17 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ArrowLeft, Save } from "lucide-react";
 
 export default function NewMedicinePage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const [categories, setCategories] = useState<any[]>([]);
   const [form, setForm] = useState({
     commercial_name: "",
     dci: "",
@@ -25,16 +27,23 @@ export default function NewMedicinePage() {
     max_stock: "100",
   });
 
+  useEffect(() => {
+    api.getCategories().then(data => {
+      setCategories(data.results || data || []);
+    }).catch(console.error);
+  }, []);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     try {
       await api.createMedicine({
         ...form,
-        purchase_price: parseFloat(form.purchase_price),
-        selling_price: parseFloat(form.selling_price),
-        min_stock: parseInt(form.min_stock),
-        max_stock: parseInt(form.max_stock),
+        purchase_price: parseFloat(form.purchase_price) || 0,
+        selling_price: parseFloat(form.selling_price) || 0,
+        min_stock: parseInt(form.min_stock) || 10,
+        max_stock: parseInt(form.max_stock) || 100,
+        category: form.category || null,
       });
       router.push("/medicines");
     } catch (err) {
@@ -49,7 +58,7 @@ export default function NewMedicinePage() {
   };
 
   return (
-    <div className="p-8 space-y-6 max-w-2xl mx-auto">
+    <div className="space-y-6 max-w-2xl mx-auto">
       <Button variant="ghost" onClick={() => router.back()}>
         <ArrowLeft className="w-4 h-4 mr-2" /> Retour
       </Button>
@@ -80,6 +89,22 @@ export default function NewMedicinePage() {
                 <Label>Fabricant</Label>
                 <Input value={form.manufacturer} onChange={e => updateField("manufacturer", e.target.value)} />
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Catégorie</Label>
+              <Select value={form.category} onValueChange={(value) => updateField("category", value)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Sélectionner une catégorie..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {categories.map((cat: any) => (
+                    <SelectItem key={cat.id} value={cat.id.toString()}>
+                      {cat.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="grid grid-cols-2 gap-4">

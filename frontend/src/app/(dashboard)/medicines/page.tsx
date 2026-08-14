@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Search, Plus, Filter, ArrowUpDown, MoreHorizontal, Eye, Edit, Trash2, Package, AlertTriangle, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, Plus, MoreHorizontal, Eye, Edit, Trash2 } from "lucide-react";
 
 export default function MedicinesPage() {
   const router = useRouter();
@@ -19,10 +19,7 @@ export default function MedicinesPage() {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
 
-  useEffect(() => {
-    if (!api.getToken()) { router.push("/login"); return; }
-    loadMedicines();
-  }, [page, search]);
+  useEffect(() => { loadMedicines(); }, [page, search]);
 
   const loadMedicines = async () => {
     setLoading(true);
@@ -41,7 +38,7 @@ export default function MedicinesPage() {
   const formatFCFA = (value: number) => new Intl.NumberFormat('fr-FR').format(value) + ' FCFA';
 
   return (
-    <div className="p-8 space-y-6">
+    <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-slate-900">Médicaments</h1>
@@ -99,13 +96,13 @@ export default function MedicinesPage() {
                             <Edit className="w-4 h-4 mr-2" /> Modifier
                           </DropdownMenuItem>
                           <DropdownMenuItem className="text-red-600" onClick={async () => {
-  if (confirm("Supprimer ce médicament ?")) {
-    await api.deleteMedicine(med.id);
-    loadMedicines();
-  }
-}}>
-  <Trash2 className="w-4 h-4 mr-2" /> Supprimer
-</DropdownMenuItem>
+                            if (confirm("Supprimer ce médicament ?")) {
+                              await api.deleteMedicine(med.id);
+                              loadMedicines();
+                            }
+                          }}>
+                            <Trash2 className="w-4 h-4 mr-2" /> Supprimer
+                          </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </TableCell>

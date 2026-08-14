@@ -47,7 +47,7 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     # Apps locales (à venir)
 
-
+    'apps.orders',
     'corsheaders',
     'django_filters',
     
@@ -174,5 +174,13 @@ SIMPLE_JWT = {
 CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_CREDENTIALS = True
 
-
-#console.log(localStorage.getItem('auth_token'));
+# Email
+EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'  # Affiche dans la console (dev);
+#En production :
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = 'tresornaguermbaye@gmail.com'
+EMAIL_HOST_PASSWORD ='sjlqqdtdwwcnlxbz'
+DEFAULT_FROM_EMAIL = 'deng.devpharma@gmail.com'

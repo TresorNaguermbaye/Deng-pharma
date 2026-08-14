@@ -2,6 +2,7 @@
 from django.urls import path
 from .views import (
     AIPredictView,
+    AIRecommendStockView,
     AIStockAnalysisView,
     AIOrderRecommendationView,
     AISeasonalAnalysisView,
@@ -28,6 +29,8 @@ urlpatterns = [
     
     # Chatbot
     path('chat/', AIChatView.as_view(), name='ai-chat'),
+
+    path('recommend-stock/', AIRecommendStockView.as_view(), name='ai-recommend-stock'),
     
     # Santé du service
     path('health/', AIHealthView.as_view(), name='ai-health'),

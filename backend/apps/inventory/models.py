@@ -1,4 +1,3 @@
-# backend/apps/inventory/models.py
 from datetime import date
 from django.db import models
 from django.core.validators import MinValueValidator
@@ -6,7 +5,6 @@ from django.conf import settings
 from apps.medicines.models import Medicine
 
 class StockLot(models.Model):
-    """Lot de médicaments avec date d'expiration"""
     medicine = models.ForeignKey(Medicine, on_delete=models.CASCADE, related_name='stock_lots')
     batch_number = models.CharField(max_length=100, verbose_name="Numéro de lot")
     quantity = models.PositiveIntegerField(default=0)
@@ -17,7 +15,7 @@ class StockLot(models.Model):
     class Meta:
         verbose_name = "Lot de stock"
         verbose_name_plural = "Lots de stock"
-        ordering = ['expiry_date']  # FEFO : le plus proche expiration en premier
+        ordering = ['expiry_date']
         indexes = [
             models.Index(fields=['expiry_date']),
             models.Index(fields=['batch_number']),
@@ -27,7 +25,6 @@ class StockLot(models.Model):
         return f"{self.medicine.commercial_name} - Lot {self.batch_number}"
 
 class StockMovement(models.Model):
-    """Mouvement de stock (entrée ou sortie)"""
     MOVEMENT_TYPES = (
         ('IN', 'Entrée'),
         ('OUT', 'Sortie'),
@@ -59,7 +56,6 @@ class StockMovement(models.Model):
     def save(self, *args, **kwargs):
         # Appliquer FEFO automatiquement pour les sorties si le lot n'est pas spécifié
         if self.movement_type == 'OUT' and not self.lot:
-            # Sélectionner le lot disponible avec la date d'expiration la plus proche
             available_lot = StockLot.objects.filter(
                 medicine=self.medicine,
                 quantity__gt=0,
@@ -69,6 +65,16 @@ class StockMovement(models.Model):
                 self.lot = available_lot
             else:
                 raise ValueError("Aucun lot disponible pour ce médicament")
+
+        # Mettre à jour la quantité du lot
+        is_new = self.pk is None
+        if is_new and self.lot:
+            if self.movement_type == 'IN':
+                self.lot.quantity += self.quantity
+            elif self.movement_type == 'OUT':
+                self.lot.quantity -= self.quantity
+            self.lot.save(update_fields=['quantity'])
+
         super().save(*args, **kwargs)
 
     def __str__(self):

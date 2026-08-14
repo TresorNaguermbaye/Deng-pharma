@@ -2,18 +2,27 @@ from django.db import transaction, models
 from django.utils import timezone
 from rest_framework import viewsets, status, permissions
 from rest_framework.response import Response
-from datetime import date
+from datetime import date, timedelta
 
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from django.db.models import Sum, F, Q,Avg
+from apps.medicines.models import Medicine,Category
+from apps.inventory.models import StockLot
+from apps.sales.models import SaleItem
 from .models import StockLot, StockMovement
 from .serializers import StockLotSerializer, StockMovementSerializer
 from apps.notifications.models import Notification
 from apps.accounts.permissions import AuditeurReadOnly
+from rest_framework.permissions import IsAuthenticated
+from apps.accounts.permissions import IsAdminOrReadOnly
 
 class StockLotViewSet(viewsets.ModelViewSet):
     """CRUD pour les lots de stock"""
     queryset = StockLot.objects.select_related('medicine').all()
     serializer_class = StockLotSerializer
-    permission_classes = [permissions.IsAuthenticated, AuditeurReadOnly]
+    permission_classes = [IsAuthenticated, IsAdminOrReadOnly]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -31,7 +40,7 @@ class StockMovementViewSet(viewsets.ModelViewSet):
     """CRUD pour les mouvements de stock avec logique FEFO et mise à jour des quantités"""
     queryset = StockMovement.objects.select_related('medicine', 'lot', 'performed_by').all()
     serializer_class = StockMovementSerializer
-    permission_classes = [permissions.IsAuthenticated, AuditeurReadOnly]
+    permission_classes = [IsAuthenticated, IsAdminOrReadOnly]
 
     def perform_create(self, serializer):
         with transaction.atomic():
@@ -69,3 +78,49 @@ class StockMovementViewSet(viewsets.ModelViewSet):
                 type=notif_type,
                 message=message
             )
+
+# backend/apps/inventory/views.py
+
+class OutOfStockView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        # Médicaments dont le stock total (non expiré) <= 0
+        out_of_stock_ids = (
+            StockLot.objects.filter(expiry_date__gte=date.today())
+            .values('medicine')
+            .annotate(total=Sum('quantity'))
+            .filter(total__lte=0)
+            .values_list('medicine', flat=True)
+        )
+        medicines = Medicine.objects.filter(id__in=out_of_stock_ids).select_related('category')
+
+        data = []
+        for med in medicines:
+            # Stock actuel = 0 (car en rupture)
+            current_stock = 0
+
+            # Moyenne des ventes quotidiennes sur les 30 derniers jours
+            thirty_days_ago = timezone.now().date() - timedelta(days=30)
+            avg_sales = SaleItem.objects.filter(
+                medicine=med,
+                sale__created_at__date__gte=thirty_days_ago
+            ).aggregate(avg=Avg('quantity'))['avg'] or 0
+
+            # Règle : stock_max - stock_actuel, mais au moins la moyenne des ventes * 7 jours
+            simple_suggestion = max(med.max_stock - current_stock, 0)
+            ai_suggestion = max(int(avg_sales * 7), 0)
+            recommended = max(simple_suggestion, ai_suggestion)
+
+            # Si aucune donnée de vente, on utilise la règle simple
+            if recommended == 0:
+                recommended = med.max_stock
+
+            data.append({
+                'id': med.id,
+                'name': med.commercial_name,
+                'category': med.category.name if med.category else '',
+                'recommended_order': recommended,
+            })
+
+        return Response(data)
