@@ -72,7 +72,7 @@ export default function SalesPage() {
         items: cart.map(item => ({ medicine: item.id, quantity: item.quantity, unit_price: item.price }))
       });
       setLastSaleId(result.id);
-      triggerRefresh();            // 🔥 Déclenche la mise à jour du dashboard
+      triggerRefresh();
       setCart([]);
       setCustomerName("");
       setDiscount(0);
@@ -86,32 +86,47 @@ export default function SalesPage() {
   const formatFCFA = (v: number) => new Intl.NumberFormat('fr-FR').format(v) + ' FCFA';
 
   return (
-    <div className="space-y-6">
-      <div><h1 className="text-3xl font-bold text-slate-900">Ventes</h1><p className="text-slate-500 mt-1">Gérez vos ventes et générez des factures</p></div>
+    <div className="space-y-6 p-4 md:p-8 bg-slate-50 dark:bg-slate-900 min-h-screen">
+      <div>
+        <h1 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">Ventes</h1>
+        <p className="text-slate-500 dark:text-slate-400 mt-1">Gérez vos ventes et générez des factures</p>
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-4">
-          <Card className="border-0 shadow-md">
-            <CardHeader><CardTitle className="flex items-center gap-2"><ShoppingCart className="w-5 h-5" /> Panier</CardTitle></CardHeader>
+          <Card className="border-0 shadow-md dark:bg-slate-800 dark:border-slate-700">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
+                <ShoppingCart className="w-5 h-5" /> Panier
+              </CardTitle>
+            </CardHeader>
             <CardContent>
               {cart.length === 0 ? (
-                <p className="text-center text-slate-400 py-8">Panier vide. Recherchez un médicament.</p>
+                <p className="text-center text-slate-400 dark:text-slate-500 py-8">Panier vide. Recherchez un médicament.</p>
               ) : (
                 <Table>
-                  <TableHeader><TableRow><TableHead>Médicament</TableHead><TableHead>Prix</TableHead><TableHead>Qté</TableHead><TableHead>Total</TableHead><TableHead></TableHead></TableRow></TableHeader>
+                  <TableHeader>
+                    <TableRow className="border-slate-200 dark:border-slate-700">
+                      <TableHead className="text-slate-500 dark:text-slate-400">Médicament</TableHead>
+                      <TableHead className="text-slate-500 dark:text-slate-400">Prix</TableHead>
+                      <TableHead className="text-slate-500 dark:text-slate-400">Qté</TableHead>
+                      <TableHead className="text-slate-500 dark:text-slate-400">Total</TableHead>
+                      <TableHead></TableHead>
+                    </TableRow>
+                  </TableHeader>
                   <TableBody>
                     {cart.map(item => (
-                      <TableRow key={item.id}>
-                        <TableCell className="font-medium">{item.name}</TableCell>
-                        <TableCell>{formatFCFA(item.price)}</TableCell>
+                      <TableRow key={item.id} className="border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700">
+                        <TableCell className="font-medium text-slate-900 dark:text-white">{item.name}</TableCell>
+                        <TableCell className="text-slate-500 dark:text-slate-400">{formatFCFA(item.price)}</TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2">
-                            <Button variant="outline" size="sm" onClick={() => updateQuantity(item.id, -1)}><Minus className="w-3 h-3" /></Button>
-                            <span className="w-8 text-center">{item.quantity}</span>
-                            <Button variant="outline" size="sm" onClick={() => updateQuantity(item.id, 1)}><Plus className="w-3 h-3" /></Button>
+                            <Button variant="outline" size="sm" onClick={() => updateQuantity(item.id, -1)} className="dark:border-slate-600 dark:text-slate-300"><Minus className="w-3 h-3" /></Button>
+                            <span className="w-8 text-center text-slate-900 dark:text-white">{item.quantity}</span>
+                            <Button variant="outline" size="sm" onClick={() => updateQuantity(item.id, 1)} className="dark:border-slate-600 dark:text-slate-300"><Plus className="w-3 h-3" /></Button>
                           </div>
                         </TableCell>
-                        <TableCell className="font-semibold">{formatFCFA(item.price * item.quantity)}</TableCell>
+                        <TableCell className="font-semibold text-slate-900 dark:text-white">{formatFCFA(item.price * item.quantity)}</TableCell>
                         <TableCell><Button variant="ghost" size="sm" className="text-red-500" onClick={() => removeFromCart(item.id)}><Trash2 className="w-4 h-4" /></Button></TableCell>
                       </TableRow>
                     ))}
@@ -119,9 +134,13 @@ export default function SalesPage() {
                 </Table>
               )}
               {cart.length > 0 && (
-                <div className="border-t pt-4 mt-4 space-y-2 text-right">
-                  <p className="text-slate-500">Sous-total : {formatFCFA(subtotal)}</p>
-                  <div className="flex items-center justify-end gap-2"><Label>Remise :</Label><Input type="number" value={discount} onChange={e => setDiscount(Number(e.target.value))} className="w-32" /><span>FCFA</span></div>
+                <div className="border-t border-slate-200 dark:border-slate-700 pt-4 mt-4 space-y-2 text-right">
+                  <p className="text-slate-500 dark:text-slate-400">Sous-total : {formatFCFA(subtotal)}</p>
+                  <div className="flex items-center justify-end gap-2">
+                    <Label className="text-slate-500 dark:text-slate-400">Remise :</Label>
+                    <Input type="number" value={discount} onChange={e => setDiscount(Number(e.target.value))} className="w-32 dark:bg-slate-700 dark:text-white dark:border-slate-600" />
+                    <span className="text-slate-500 dark:text-slate-400">FCFA</span>
+                  </div>
                   <p className="text-xl font-bold text-[#0ABAB5]">Total : {formatFCFA(total)}</p>
                 </div>
               )}
@@ -130,15 +149,26 @@ export default function SalesPage() {
         </div>
 
         <div className="space-y-4">
-          <Card className="border-0 shadow-md">
-            <CardHeader><CardTitle>Client & Paiement</CardTitle></CardHeader>
+          <Card className="border-0 shadow-md dark:bg-slate-800 dark:border-slate-700">
+            <CardHeader>
+              <CardTitle className="text-slate-900 dark:text-white">Client & Paiement</CardTitle>
+            </CardHeader>
             <CardContent className="space-y-3">
-              <div className="space-y-2"><Label>Nom du client</Label><Input value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder="Client comptoir" /></div>
-              <div className="space-y-2"><Label>Mode de paiement</Label>
+              <div className="space-y-2">
+                <Label className="text-slate-500 dark:text-slate-400">Nom du client</Label>
+                <Input value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder="Client comptoir" className="dark:bg-slate-700 dark:text-white dark:border-slate-600" />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-slate-500 dark:text-slate-400">Mode de paiement</Label>
                 <Select value={paymentMethod} onValueChange={setPaymentMethod}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="CASH">Espèces</SelectItem><SelectItem value="CARD">Carte bancaire</SelectItem><SelectItem value="MOBILE">Mobile Money</SelectItem><SelectItem value="OTHER">Autre</SelectItem>
+                  <SelectTrigger className="dark:bg-slate-700 dark:text-white dark:border-slate-600">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="dark:bg-slate-800 dark:border-slate-700">
+                    <SelectItem value="CASH">Espèces</SelectItem>
+                    <SelectItem value="CARD">Carte bancaire</SelectItem>
+                    <SelectItem value="MOBILE">Mobile Money</SelectItem>
+                    <SelectItem value="OTHER">Autre</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -146,25 +176,40 @@ export default function SalesPage() {
                 <Receipt className="w-4 h-4 mr-2" />{submitting ? "Enregistrement..." : "Valider la vente"}
               </Button>
               {lastSaleId && (
-                <Button variant="outline" className="w-full mt-2 text-[#0ABAB5] border-[#0ABAB5]" onClick={() => downloadInvoice(lastSaleId)}>
+                <Button variant="outline" className="w-full mt-2 text-[#0ABAB5] border-[#0ABAB5] dark:bg-transparent" onClick={() => downloadInvoice(lastSaleId)}>
                   <Download className="w-4 h-4 mr-2" />Télécharger la facture
                 </Button>
               )}
             </CardContent>
           </Card>
 
-          <Card className="border-0 shadow-md">
-            <CardHeader><CardTitle>Recherche médicament</CardTitle></CardHeader>
+          <Card className="border-0 shadow-md dark:bg-slate-800 dark:border-slate-700">
+            <CardHeader>
+              <CardTitle className="text-slate-900 dark:text-white">Recherche médicament</CardTitle>
+            </CardHeader>
             <CardContent className="space-y-3">
               <div className="flex gap-2">
-                <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Nom ou DCI..." onKeyDown={e => e.key === 'Enter' && handleSearch()} />
+                <Input
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  placeholder="Nom ou DCI..."
+                  onKeyDown={e => e.key === 'Enter' && handleSearch()}
+                  className="dark:bg-slate-700 dark:text-white dark:border-slate-600"
+                />
                 <Button onClick={handleSearch}><Search className="w-4 h-4" /></Button>
               </div>
               {medicines.length > 0 && (
                 <div className="space-y-2 max-h-60 overflow-y-auto">
                   {medicines.map(med => (
-                    <div key={med.id} className="flex items-center justify-between p-2 bg-slate-50 rounded-lg cursor-pointer hover:bg-slate-100" onClick={() => addToCart(med)}>
-                      <div><p className="font-medium text-sm">{med.commercial_name}</p><p className="text-xs text-slate-500">{formatFCFA(med.selling_price)}</p></div>
+                    <div
+                      key={med.id}
+                      className="flex items-center justify-between p-2 bg-slate-50 dark:bg-slate-700 rounded-lg cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-600"
+                      onClick={() => addToCart(med)}
+                    >
+                      <div>
+                        <p className="font-medium text-sm text-slate-900 dark:text-white">{med.commercial_name}</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">{formatFCFA(med.selling_price)}</p>
+                      </div>
                       <Plus className="w-4 h-4 text-[#0ABAB5]" />
                     </div>
                   ))}

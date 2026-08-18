@@ -67,39 +67,57 @@ export default function OutOfStockPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-4 md:p-8 bg-slate-50 dark:bg-slate-900 min-h-screen">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900">Produits en rupture</h1>
-          <p className="text-slate-500 mt-1">Réapprovisionnement basé sur l'IA</p>
+          <h1 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">
+            Produits en rupture
+          </h1>
+          <p className="text-slate-500 dark:text-slate-400 mt-1">
+            Réapprovisionnement basé sur l'IA
+          </p>
         </div>
-        <Button variant="outline" size="sm" onClick={loadItems}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={loadItems}
+          className="gap-2 dark:border-slate-600 dark:text-slate-300"
+        >
           <RefreshCw className="w-4 h-4 mr-2" /> Actualiser
         </Button>
       </div>
 
-      <Card>
+      <Card className="border-0 shadow-md dark:bg-slate-800 dark:border-slate-700">
         <CardHeader>
-          <CardTitle>{items.length} médicament(s) en rupture</CardTitle>
+          <CardTitle className="text-slate-900 dark:text-white">
+            {items.length} médicament(s) en rupture
+          </CardTitle>
         </CardHeader>
         <CardContent>
           {loading ? (
-            <Skeleton className="h-64" />
+            <Skeleton className="h-64 dark:bg-slate-700" />
           ) : (
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead>Médicament</TableHead>
-                  <TableHead>Catégorie</TableHead>
-                  <TableHead>Commande IA</TableHead>
-                  <TableHead>Action</TableHead>
+                <TableRow className="border-slate-200 dark:border-slate-700">
+                  <TableHead className="text-slate-500 dark:text-slate-400">Médicament</TableHead>
+                  <TableHead className="text-slate-500 dark:text-slate-400">Catégorie</TableHead>
+                  <TableHead className="text-slate-500 dark:text-slate-400">Commande IA</TableHead>
+                  <TableHead className="text-slate-500 dark:text-slate-400">Action</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {items.map((item: any) => (
-                  <TableRow key={item.id}>
-                    <TableCell className="font-medium">{item.name}</TableCell>
-                    <TableCell>{item.category}</TableCell>
+                  <TableRow
+                    key={item.id}
+                    className="hover:bg-slate-50 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-700"
+                  >
+                    <TableCell className="font-medium text-slate-900 dark:text-white">
+                      {item.name}
+                    </TableCell>
+                    <TableCell className="text-slate-500 dark:text-slate-400">
+                      {item.category}
+                    </TableCell>
                     <TableCell className="font-bold text-green-600">
                       {item.recommended_order} unités
                     </TableCell>
@@ -110,10 +128,14 @@ export default function OutOfStockPage() {
                           variant="outline"
                           onClick={() => handleRecommend(item.id)}
                           disabled={recommending === item.id}
+                          className="dark:border-slate-600 dark:text-slate-300"
                         >
                           {recommending === item.id ? "..." : "Recalculer"}
                         </Button>
-                        <Button size="sm" onClick={() => handleOrder(item.id, item.recommended_order)}>
+                        <Button
+                          size="sm"
+                          onClick={() => handleOrder(item.id, item.recommended_order)}
+                        >
                           Commander
                         </Button>
                       </div>

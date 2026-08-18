@@ -89,51 +89,78 @@ export default function OrdersPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-4 md:p-8 bg-slate-50 dark:bg-slate-900 min-h-screen">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900">Bons de commande</h1>
-          <p className="text-slate-500 mt-1">Liste des commandes fournisseurs</p>
+          <h1 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">
+            Bons de commande
+          </h1>
+          <p className="text-slate-500 dark:text-slate-400 mt-1">
+            Liste des commandes fournisseurs
+          </p>
         </div>
-        <Button variant="outline" size="sm" onClick={loadOrders}>Actualiser</Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={loadOrders}
+          className="dark:border-slate-600 dark:text-slate-300"
+        >
+          Actualiser
+        </Button>
       </div>
 
-      <Card>
+      <Card className="border-0 shadow-md dark:bg-slate-800 dark:border-slate-700">
         <CardHeader>
-          <CardTitle>{orders.length} commande(s)</CardTitle>
+          <CardTitle className="text-slate-900 dark:text-white">
+            {orders.length} commande(s)
+          </CardTitle>
         </CardHeader>
         <CardContent>
           {loading ? (
-            <Skeleton className="h-64" />
+            <Skeleton className="h-64 dark:bg-slate-700" />
           ) : error ? (
             <p className="text-red-500">{error}</p>
           ) : (
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead>ID</TableHead>
-                  <TableHead>Médicament</TableHead>
-                  <TableHead>Quantité</TableHead>
-                  <TableHead>Statut</TableHead>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Actions</TableHead>
+                <TableRow className="border-slate-200 dark:border-slate-700">
+                  <TableHead className="text-slate-500 dark:text-slate-400">ID</TableHead>
+                  <TableHead className="text-slate-500 dark:text-slate-400">Médicament</TableHead>
+                  <TableHead className="text-slate-500 dark:text-slate-400">Quantité</TableHead>
+                  <TableHead className="text-slate-500 dark:text-slate-400">Statut</TableHead>
+                  <TableHead className="text-slate-500 dark:text-slate-400">Date</TableHead>
+                  <TableHead className="text-slate-500 dark:text-slate-400">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {orders.map((order: any) => (
-                  <TableRow key={order.id}>
-                    <TableCell>{order.id}</TableCell>
-                    <TableCell className="font-medium">{order.medicine_name}</TableCell>
-                    <TableCell>{order.quantity_ordered}</TableCell>
+                  <TableRow
+                    key={order.id}
+                    className="border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700"
+                  >
+                    <TableCell className="text-slate-500 dark:text-slate-400">{order.id}</TableCell>
+                    <TableCell className="font-medium text-slate-900 dark:text-white">
+                      {order.medicine_name}
+                    </TableCell>
+                    <TableCell className="text-slate-500 dark:text-slate-400">
+                      {order.quantity_ordered}
+                    </TableCell>
                     <TableCell>
                       <Badge variant={order.status === "PENDING" ? "default" : "secondary"}>
                         {order.status}
                       </Badge>
                     </TableCell>
-                    <TableCell>{new Date(order.created_at).toLocaleDateString()}</TableCell>
+                    <TableCell className="text-slate-500 dark:text-slate-400">
+                      {new Date(order.created_at).toLocaleDateString()}
+                    </TableCell>
                     <TableCell>
                       <div className="flex gap-2">
-                        <Button size="sm" variant="outline" onClick={() => handleDownloadPdf(order.id)}>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleDownloadPdf(order.id)}
+                          className="dark:border-slate-600 dark:text-slate-300"
+                        >
                           <Download className="w-4 h-4 mr-2" /> PDF
                         </Button>
                         {order.status === "PENDING" && (
@@ -147,7 +174,12 @@ export default function OrdersPage() {
                 ))}
                 {orders.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center text-slate-500">Aucune commande trouvée.</TableCell>
+                    <TableCell
+                      colSpan={6}
+                      className="text-center text-slate-500 dark:text-slate-400"
+                    >
+                      Aucune commande trouvée.
+                    </TableCell>
                   </TableRow>
                 )}
               </TableBody>
@@ -158,29 +190,72 @@ export default function OrdersPage() {
 
       {selectedOrder && (
         <Dialog open={!!selectedOrder} onOpenChange={(open) => !open && setSelectedOrder(null)}>
-          <DialogContent>
+          <DialogContent className="dark:bg-slate-800 dark:border-slate-700">
             <DialogHeader>
-              <DialogTitle>Réceptionner la commande #{selectedOrder.id}</DialogTitle>
+              <DialogTitle className="text-slate-900 dark:text-white">
+                Réceptionner la commande #{selectedOrder.id}
+              </DialogTitle>
             </DialogHeader>
             <form onSubmit={handleReceiveSubmit} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="batch_number">Numéro de lot</Label>
-                <Input id="batch_number" name="batch_number" required />
+                <Label htmlFor="batch_number" className="text-slate-500 dark:text-slate-400">
+                  Numéro de lot
+                </Label>
+                <Input
+                  id="batch_number"
+                  name="batch_number"
+                  required
+                  className="dark:bg-slate-700 dark:text-white dark:border-slate-600"
+                />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="expiry_date">Date d'expiration</Label>
-                <Input id="expiry_date" name="expiry_date" type="date" required />
+                <Label htmlFor="expiry_date" className="text-slate-500 dark:text-slate-400">
+                  Date d'expiration
+                </Label>
+                <Input
+                  id="expiry_date"
+                  name="expiry_date"
+                  type="date"
+                  required
+                  className="dark:bg-slate-700 dark:text-white dark:border-slate-600"
+                />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="purchase_price_per_unit">Prix d'achat unitaire</Label>
-                <Input id="purchase_price_per_unit" name="purchase_price_per_unit" type="number" step="0.01" min="0" required />
+                <Label htmlFor="purchase_price_per_unit" className="text-slate-500 dark:text-slate-400">
+                  Prix d'achat unitaire
+                </Label>
+                <Input
+                  id="purchase_price_per_unit"
+                  name="purchase_price_per_unit"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  required
+                  className="dark:bg-slate-700 dark:text-white dark:border-slate-600"
+                />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="quantity_received">Quantité reçue</Label>
-                <Input id="quantity_received" name="quantity_received" type="number" min="1" required />
+                <Label htmlFor="quantity_received" className="text-slate-500 dark:text-slate-400">
+                  Quantité reçue
+                </Label>
+                <Input
+                  id="quantity_received"
+                  name="quantity_received"
+                  type="number"
+                  min="1"
+                  required
+                  className="dark:bg-slate-700 dark:text-white dark:border-slate-600"
+                />
               </div>
               <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setSelectedOrder(null)}>Annuler</Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setSelectedOrder(null)}
+                  className="dark:border-slate-600 dark:text-slate-300"
+                >
+                  Annuler
+                </Button>
                 <Button type="submit" disabled={receiving}>
                   {receiving ? "..." : "Confirmer la réception"}
                 </Button>

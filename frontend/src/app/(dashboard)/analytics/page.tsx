@@ -15,6 +15,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, PieChart as RPieChart, Pie, Cell,
 } from "recharts";
+import { useTheme } from "next-themes";
 
 const COLORS = [
   "#0ABAB5", "#3B82F6", "#8B5CF6", "#F59E0B", "#EF4444", "#10B981",
@@ -25,6 +26,7 @@ export default function AnalyticsPage() {
   const [kpi, setKpi] = useState<any>(null);
   const [charts, setCharts] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const { theme } = useTheme();
 
   useEffect(() => { loadData(); }, []);
 
@@ -49,12 +51,12 @@ export default function AnalyticsPage() {
   const formatNumber = (v: number) =>
     v ? new Intl.NumberFormat("fr-FR").format(v) : "0";
 
-  // ----- Données réelles issues de l'API (pas de fallback simulé) -----
+  // ----- Données réelles issues de l'API -----
   const dailySales = charts?.daily_sales || [];
   const categories = charts?.categories || [];
   const topMedicines = charts?.top_medicines || [];
 
-  // ----- KPI calculés (Business Intelligence) -----
+  // ----- KPI calculés -----
   const totalSales = dailySales.reduce((sum: number, d: any) => sum + d.orders, 0);
   const totalRevenue = dailySales.reduce((sum: number, d: any) => sum + d.revenue, 0);
   const averageBasket = totalSales > 0 ? totalRevenue / totalSales : 0;
@@ -70,7 +72,7 @@ export default function AnalyticsPage() {
 
   if (loading) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-6 p-4 md:p-8 bg-slate-50 dark:bg-slate-900 min-h-screen">
         <Skeleton className="h-8 w-64" />
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[...Array(8)].map((_, i) => <Skeleton key={i} className="h-32 rounded-xl" />)}
@@ -84,13 +86,17 @@ export default function AnalyticsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-4 md:p-8 bg-slate-50 dark:bg-slate-900 min-h-screen">
       <div>
-        <h1 className="text-3xl font-bold text-slate-900">Analytics</h1>
-        <p className="text-slate-500 mt-1">Analysez vos performances et tendances</p>
+        <h1 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">
+          Analytics
+        </h1>
+        <p className="text-slate-500 dark:text-slate-400 mt-1">
+          Analysez vos performances et tendances
+        </p>
       </div>
 
-      {/* ---- KPIs principaux (CA, ventes, stock, profit) ---- */}
+      {/* ---- KPIs principaux ---- */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <KpiCard
           title="CA Mensuel"
@@ -122,7 +128,7 @@ export default function AnalyticsPage() {
         />
       </div>
 
-      {/* ---- KPI avancés (Business Intelligence) ---- */}
+      {/* ---- KPI avancés ---- */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <KpiCard
           title="Panier moyen"
@@ -157,9 +163,11 @@ export default function AnalyticsPage() {
       {/* ---- Graphiques côte à côte ---- */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Ventes 7 derniers jours */}
-        <Card className="border-0 shadow-md">
+        <Card className="border-0 shadow-md dark:bg-slate-800 dark:border-slate-700">
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-lg">Ventes des 7 derniers jours</CardTitle>
+            <CardTitle className="text-lg text-slate-900 dark:text-white">
+              Ventes des 7 derniers jours
+            </CardTitle>
             <BarChart3 className="w-5 h-5 text-slate-400" />
           </CardHeader>
           <CardContent>
@@ -167,14 +175,30 @@ export default function AnalyticsPage() {
               <ResponsiveContainer width="100%" height={350}>
                 <BarChart data={dailySales}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                  <XAxis dataKey="day_name" fontSize={12} />
-                  <YAxis tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} fontSize={12} />
-                  <Tooltip formatter={(v: number) => [formatFCFA(v), "Chiffre d'affaires"]} />
+                  <XAxis
+                    dataKey="day_name"
+                    fontSize={12}
+                    stroke={theme === "dark" ? "#94a3b8" : "#64748b"}
+                  />
+                  <YAxis
+                    tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`}
+                    fontSize={12}
+                    stroke={theme === "dark" ? "#94a3b8" : "#64748b"}
+                  />
+                  <Tooltip
+                    formatter={(v: number) => [formatFCFA(v), "Chiffre d'affaires"]}
+                    contentStyle={{
+                      backgroundColor: theme === "dark" ? "#1e293b" : "#fff",
+                      border: "none",
+                      borderRadius: "8px",
+                      color: theme === "dark" ? "#fff" : "#000",
+                    }}
+                  />
                   <Bar dataKey="revenue" fill="#0ABAB5" radius={[8, 8, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             ) : (
-              <div className="h-[350px] flex items-center justify-center text-slate-400">
+              <div className="h-[350px] flex items-center justify-center text-slate-400 dark:text-slate-500">
                 Aucune vente enregistrée
               </div>
             )}
@@ -182,9 +206,11 @@ export default function AnalyticsPage() {
         </Card>
 
         {/* Répartition par catégorie */}
-        <Card className="border-0 shadow-md">
+        <Card className="border-0 shadow-md dark:bg-slate-800 dark:border-slate-700">
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-lg">Répartition par catégorie</CardTitle>
+            <CardTitle className="text-lg text-slate-900 dark:text-white">
+              Répartition par catégorie
+            </CardTitle>
             <PieChart className="w-5 h-5 text-slate-400" />
           </CardHeader>
           <CardContent>
@@ -205,7 +231,15 @@ export default function AnalyticsPage() {
                         <Cell key={idx} fill={COLORS[idx % COLORS.length]} />
                       ))}
                     </Pie>
-                    <Tooltip formatter={(v: number) => [formatFCFA(v), "CA"]} />
+                    <Tooltip
+                      formatter={(v: number) => [formatFCFA(v), "CA"]}
+                      contentStyle={{
+                        backgroundColor: theme === "dark" ? "#1e293b" : "#fff",
+                        border: "none",
+                        borderRadius: "8px",
+                        color: theme === "dark" ? "#fff" : "#000",
+                      }}
+                    />
                   </RPieChart>
                 </ResponsiveContainer>
                 <div className="w-40 space-y-2">
@@ -215,13 +249,13 @@ export default function AnalyticsPage() {
                         className="w-3 h-3 rounded-full"
                         style={{ backgroundColor: COLORS[i % COLORS.length] }}
                       />
-                      <span className="text-slate-600">{cat.name}</span>
+                      <span className="text-slate-600 dark:text-slate-300">{cat.name}</span>
                     </div>
                   ))}
                 </div>
               </div>
             ) : (
-              <div className="h-[300px] flex items-center justify-center text-slate-400">
+              <div className="h-[300px] flex items-center justify-center text-slate-400 dark:text-slate-500">
                 Aucune vente enregistrée
               </div>
             )}
@@ -247,12 +281,14 @@ function KpiCard({
   color: string;
 }) {
   return (
-    <Card className={`border-0 shadow-md bg-gradient-to-br ${bg}`}>
+    <Card className={`border-0 shadow-md bg-gradient-to-br ${bg} dark:bg-none dark:bg-slate-800 dark:border-slate-700`}>
       <CardContent className="p-4 flex items-center gap-3">
-        <div className={`p-2 rounded-full bg-white ${color}`}>{icon}</div>
+        <div className={`p-2 rounded-full bg-white dark:bg-white/10 ${color}`}>
+          {icon}
+        </div>
         <div>
-          <p className="text-xs text-slate-500">{title}</p>
-          <p className="text-xl font-bold text-slate-800">{value}</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400">{title}</p>
+          <p className="text-xl font-bold text-slate-800 dark:text-white">{value}</p>
         </div>
       </CardContent>
     </Card>
