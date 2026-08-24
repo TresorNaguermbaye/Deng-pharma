@@ -1,11 +1,13 @@
 "use client";
 
+import Logo from "@/components/Logo";
 import { useRouter, usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
   TrendingUp, Pill, Package, ShoppingCart, BarChart3,
-  Brain, Users, Bell, LogOut
+  Brain, Users, Bell, LogOut,
+  FileBarChart
 } from "lucide-react";
 
 const navItems = [
@@ -13,6 +15,7 @@ const navItems = [
   { label: "Médicaments", href: "/medicines", icon: Pill },
   { label: "Stocks", href: "/inventory", icon: Package },
   { label: "Ventes", href: "/sales", icon: ShoppingCart },
+  { label: "Rapports", href: "/reports", icon: FileBarChart }, 
   { label: "Analytics", href: "/analytics", icon: BarChart3 },
   { label: "Chat IA", href: "/ai/chat", icon: Brain },
   { label: "IA Prédictions", href: "/ai/predictions", icon: Brain },
@@ -31,7 +34,7 @@ export function Sidebar() {
   };
 
   return (
-    <aside className="w-64 bg-[#0F1A2C] text-white fixed left-0 top-16 bottom-0 z-30 hidden lg:flex flex-col">
+    <aside className="w-64 bg-[#0F1A2C] text-white fixed left-0 top-25 bottom-0 z-30 hidden lg:flex flex-col">
       <nav className="flex-1 px-4 py-4 space-y-1 overflow-y-auto">
         {navItems.map((item) => {
           const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
@@ -44,7 +47,7 @@ export function Sidebar() {
                 "flex items-center gap-3 w-full px-4 py-3 rounded-lg text-left text-sm font-medium transition-all",
                 isActive
                   ? "bg-[#0ABAB5] text-white shadow-lg shadow-[#0ABAB5]/25"
-                  : "text-gray-300 hover:bg-white/10 hover:text-white"
+                  : "text-gray-400 hover:bg-white/10 hover:text-white"
               )}
             >
               <Icon className="w-5 h-5" />

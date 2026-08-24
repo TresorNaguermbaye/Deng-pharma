@@ -130,7 +130,52 @@ class DengPharmaAIClient:
         except requests.RequestException as e:
             logger.error(f"Erreur criticité : {e}")
             return {"error": str(e)}
-    
+
+
+    def get_model_performance(self) -> Dict:
+        """Récupère les métriques du modèle en production (MAE, RMSE, MAPE, version)."""
+        try:
+            response = requests.get(
+                f"{self.base_url}/model-performance",
+                timeout=self.timeout
+            )
+            return response.json()
+        except requests.RequestException as e:
+            logger.error(f"Erreur model performance : {e}")
+            return {"error": str(e)}
+
+
+
+    def get_shap_analysis(self, medicine_id: str) -> Dict:
+        """Récupère l'analyse SHAP pour un médicament."""
+        try:
+            response = requests.get(
+                f"{self.base_url}/shap-analysis",
+                params={"medicine_id": medicine_id},
+                timeout=self.timeout
+            )
+            return response.json()
+        except requests.RequestException as e:
+            logger.error(f"Erreur SHAP : {e}")
+            return {"error": str(e)}
+
+
+
+    def train_model(self) -> Dict:
+        """Déclenche l'entraînement du modèle IA."""
+        try:
+            response = requests.post(
+                f"{self.base_url}/train",
+                timeout=self.timeout
+            )
+            return response.json()
+        except requests.RequestException as e:
+            logger.error(f"Erreur lors du lancement de l'entraînement : {e}")
+            return {"error": str(e)}
+
+
+
+
     def chat(self, message: str) -> Dict:
         """Envoie un message au chatbot IA"""
         try:

@@ -1,10 +1,10 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, time as dtime
 from django.db.models import Sum, Count, Q, F, DecimalField
 from django.db.models.functions import Coalesce
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from django.utils.timezone import now
+from django.utils import timezone
 
 from apps.sales.models import Sale, SaleItem
 from apps.medicines.models import Medicine, Category
@@ -12,11 +12,12 @@ from apps.inventory.models import StockLot
 from apps.accounts.permissions import AuditeurReadOnly
 from django.db.models.functions import Coalesce
 
+from django.db.models.functions import TruncDate
 
 class TodaySalesView(APIView):
     permission_classes = [IsAuthenticated]
     def get(self, request):
-        today = now().date()
+        today = timezone.localdate()
         sales = Sale.objects.filter(created_at__date=today).prefetch_related('items__medicine').order_by('-created_at')
         data = []
         for sale in sales:
@@ -98,7 +99,7 @@ class DashboardKPIView(APIView):
     permission_classes = [IsAuthenticated, AuditeurReadOnly]
 
     def get(self, request):
-        today = now().date()
+        today = timezone.localdate()
         week_start = today - timedelta(days=today.weekday())
         month_start = today.replace(day=1)
 
@@ -179,24 +180,47 @@ class SalesChartView(APIView):
     permission_classes = [IsAuthenticated, AuditeurReadOnly]
 
     def get(self, request):
-        today = now().date()
+        # 1. Calculer la plage des 7 derniers jours en heure locale
+        today_local = timezone.localdate()
+        start_local = today_local - timedelta(days=6)
 
-        # 1. Ventes quotidiennes des 7 derniers jours
+        # Convertir en datetime local minuit et en UTC pour le filtre
+        start_datetime_local = datetime.combine(start_local, dtime.min)
+        end_datetime_local = datetime.combine(today_local, dtime.max)
+
+        start_utc = timezone.make_aware(start_datetime_local, timezone.get_current_timezone())
+        end_utc = timezone.make_aware(end_datetime_local, timezone.get_current_timezone())
+
+        # Récupérer toutes les ventes sur la période (filtrées en UTC)
+        sales = Sale.objects.filter(created_at__range=(start_utc, end_utc)).only('created_at', 'total_amount')
+
+        # Initialiser les agrégats pour chaque jour
         daily_sales = []
         for i in range(6, -1, -1):
-            day = today - timedelta(days=i)
-            total = Sale.objects.filter(created_at__date=day).aggregate(
-                total=Coalesce(Sum('total_amount'), 0.0, output_field=DecimalField())
-            )['total']
-            count = Sale.objects.filter(created_at__date=day).count()
+            day = today_local - timedelta(days=i)
             daily_sales.append({
                 'date': day.isoformat(),
-                'day_name': ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'][day.weekday()],
-                'revenue': float(total),
-                'orders': count
+                'day_name': ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'][day.weekday()],
+                'revenue': 0.0,
+                'orders': 0,
+                '_count': 0,
             })
 
-        # 2. Top médicaments (quantité vendue et CA)
+        # Remplir avec les ventes réelles en convertissant en heure locale
+        for sale in sales:
+            local_time = timezone.localtime(sale.created_at)
+            local_date = local_time.date()
+            day_index = (local_date - start_local).days
+            if 0 <= day_index <= 6:
+                daily_sales[day_index]['revenue'] += float(sale.total_amount)
+                daily_sales[day_index]['orders'] += 1
+                daily_sales[day_index]['_count'] += 1
+
+        # Supprimer le champ temporaire _count
+        for item in daily_sales:
+            del item['_count']
+
+        # 2. Top médicaments (inchangé)
         top_meds = SaleItem.objects.values('medicine__commercial_name').annotate(
             total_qty=Sum('quantity'),
             total_revenue=Sum(F('quantity') * F('unit_price'))
@@ -208,7 +232,7 @@ class SalesChartView(APIView):
             'revenue': float(item['total_revenue'])
         } for item in top_meds]
 
-        # 3. Ventes par catégorie
+        # 3. Ventes par catégorie (inchangé)
         cat_sales = SaleItem.objects.values('medicine__category__name').annotate(
             total=Sum(F('quantity') * F('unit_price'))
         ).order_by('-total')
@@ -222,4 +246,52 @@ class SalesChartView(APIView):
             'daily_sales': daily_sales,
             'top_medicines': top_medicines,
             'categories': categories
+        })
+
+
+class GlobalSearchView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        query = request.query_params.get('q', '').strip()
+        if not query:
+            return Response({'medicines': [], 'sales': [], 'customers': []})
+
+        # Recherche médicaments
+        medicines = Medicine.objects.filter(
+            Q(commercial_name__icontains=query) |
+            Q(dci__icontains=query) |
+            Q(barcode__icontains=query)
+        )[:10]
+        medicine_data = [{
+            'id': str(med.id),
+            'commercial_name': med.commercial_name,
+            'dci': med.dci,
+            'category_name': med.category.name if med.category else '',
+            'selling_price': float(med.selling_price),
+        } for med in medicines]
+
+        # Recherche ventes par ID ou nom client
+        sales_qs = Sale.objects.filter(
+            Q(customer_name__icontains=query) |
+            (Q(id__icontains=query) if query.isdigit() else Q())
+        ).select_related('user')[:10]
+        sales_data = [{
+            'id': sale.id,
+            'customer_name': sale.customer_name or 'Client comptoir',
+            'total_amount': float(sale.total_amount),
+            'payment_method': sale.get_payment_method_display(),
+            'created_at': sale.created_at.strftime('%d/%m/%Y %H:%M'),
+        } for sale in sales_qs]
+
+        # Recherche clients distincts (basé sur customer_name non vide)
+        customers_qs = Sale.objects.exclude(customer_name__isnull=True).exclude(customer_name='').filter(
+            customer_name__icontains=query
+        ).values('customer_name').distinct()[:10]
+        customers_data = [{'name': item['customer_name']} for item in customers_qs]
+
+        return Response({
+            'medicines': medicine_data,
+            'sales': sales_data,
+            'customers': customers_data,
         })

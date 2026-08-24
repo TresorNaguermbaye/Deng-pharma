@@ -66,15 +66,8 @@ class StockMovement(models.Model):
             else:
                 raise ValueError("Aucun lot disponible pour ce médicament")
 
-        # Mettre à jour la quantité du lot
-        is_new = self.pk is None
-        if is_new and self.lot:
-            if self.movement_type == 'IN':
-                self.lot.quantity += self.quantity
-            elif self.movement_type == 'OUT':
-                self.lot.quantity -= self.quantity
-            self.lot.save(update_fields=['quantity'])
-
+        # La mise à jour de la quantité du lot est désormais gérée par le signal post_save
+        # (voir apps/inventory/signals.py). On ne la fait plus ici pour éviter la double soustraction.
         super().save(*args, **kwargs)
 
     def __str__(self):

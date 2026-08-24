@@ -132,6 +132,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'fr-fr'
 TIME_ZONE = 'Africa/Ndjamena'  # Tchad
+CELERY_TIMEZONE = 'Africa/Ndjamena'
 USE_I18N = True
 USE_L10N = True
 USE_TZ = True
@@ -174,13 +175,26 @@ SIMPLE_JWT = {
 CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_CREDENTIALS = True
 
-# Email
-EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'  # Affiche dans la console (dev);
-#En production :
+# ================== CONFIGURATION EMAIL ==================
+# Mode console (développement) : décommentez la ligne suivante pour tester sans envoi réel
+# EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+
+# Mode SMTP (production / envoi réel)
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
-EMAIL_HOST_USER = 'tresornaguermbaye@gmail.com'
-EMAIL_HOST_PASSWORD ='sjlqqdtdwwcnlxbz'
-DEFAULT_FROM_EMAIL = 'deng.devpharma@gmail.com'
+EMAIL_HOST_USER = 'tresornaguermbaye@gmail.com'          # votre adresse Gmail
+EMAIL_HOST_PASSWORD = 'sjlqqdtdwwcnlxbz'                 # mot de passe d'application Gmail
+DEFAULT_FROM_EMAIL = 'tresornaguermbaye@gmail.com'       # doit correspondre à EMAIL_HOST_USER pour Gmail
+
+
+
+FRONTEND_URL = 'http://10.93.182.149:3001'   # utilisez votre IP locale et le port correct
+
+# Configuration Celery
+CELERY_BROKER_URL = 'redis://localhost:6379/0'
+CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
+CELERY_TIMEZONE = 'Africa/Ndjamena'
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutes

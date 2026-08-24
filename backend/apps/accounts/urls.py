@@ -1,7 +1,7 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenVerifyView, TokenRefreshView
-from .views import ChangePasswordView, CompleteOnboardingView, MeView, UploadPhotoView, UserViewSet
+from .views import ChangePasswordView, CompleteOnboardingView, MeView, PasswordResetConfirmView, PasswordResetRequestView, PharmacyLogoView, UploadPhotoView, UserViewSet
 
 
 router = DefaultRouter()
@@ -19,7 +19,12 @@ urlpatterns = [
     path('change-password/', ChangePasswordView.as_view(), name='change-password'),
     path('upload-photo/', UploadPhotoView.as_view(), name='upload-photo'),
     path('onboarding/complete/', CompleteOnboardingView.as_view(), name='complete-onboarding'),
-
+    path('pharmacy-logo/', PharmacyLogoView.as_view(), name='pharmacy-logo'),
     # Inclut les routes du routeur (users)
     path('', include(router.urls)),
+    path('password-reset/', PasswordResetRequestView.as_view(), name='password-reset'),
+    path('password-reset/confirm/', PasswordResetConfirmView.as_view(), name='password-reset-confirm'),
+    
+
+
 ]

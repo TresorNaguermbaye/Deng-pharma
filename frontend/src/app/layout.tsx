@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ThemeProvider } from "@/components/ThemeProvider";
-import { AuthProvider } from "@/lib/auth"; // <-- import ajouté
+import { AuthProvider } from "@/lib/auth";
+import Providers from "./providers"; // <-- import du QueryClientProvider
 import "./globals.css";
+import GlobalSearch from "@/components/GlobalSearch";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
@@ -20,11 +22,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       suppressHydrationWarning
     >
       <body className="antialiased bg-slate-50 dark:bg-slate-900 min-h-screen">
-        <AuthProvider>
-          <ThemeProvider>
-            {children}
-          </ThemeProvider>
-        </AuthProvider>
+        <Providers>
+          <AuthProvider>
+            <ThemeProvider>
+              {children}
+            </ThemeProvider>
+          </AuthProvider>
+          
+        </Providers>
+         <GlobalSearch />
       </body>
     </html>
   );

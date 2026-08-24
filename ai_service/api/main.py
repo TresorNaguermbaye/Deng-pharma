@@ -4,6 +4,14 @@ DENG PHARMA - Service IA
 API de prévision des ventes, détection ruptures, recommandations
 Modèle XGBoost entraîné sur dataset Tchadien
 """
+import json
+from venv import logger
+
+import requests
+import subprocess
+import sys
+
+import shap
 from fastapi import FastAPI, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -105,6 +113,37 @@ def health():
         "features": features_list
     }
 
+
+
+
+@app.get("/model-performance")
+def model_performance():
+    """Retourne les métriques réelles sauvegardées lors du dernier entraînement."""
+    try:
+        metrics_path = os.path.join(MODELS_DIR, 'metrics.json')
+        with open(metrics_path, 'r') as f:
+            metrics = json.load(f)
+        return metrics
+    except FileNotFoundError:
+        return {
+            "error": "Métriques non disponibles. Réentraînez le modèle.",
+            "mae": None,
+            "rmse": None,
+            "mape": None,
+            "model_version": None
+        }
+
+
+@app.post("/train")
+def train_model_endpoint():
+    """Lance l'entraînement du modèle en arrière-plan."""
+    try:
+        script_path = os.path.join(os.path.dirname(__file__), '..', 'training', 'train_model.py')
+        subprocess.Popen([sys.executable, script_path])
+        return {"status": "Entraînement lancé en arrière-plan"}
+    except Exception as e:
+        raise HTTPException(500, f"Erreur lors du lancement : {e}")
+    
 # ---------- FONCTIONS UTILITAIRES POUR L'HISTORIQUE ----------
 
 
@@ -323,6 +362,69 @@ def seasonal_analysis():
         "priority_categories": ["Antipaludéens", "Réhydratation", "Antibiotiques"] if is_rainy else ["Vaccins", "Respiratoire", "Antibiotiques"]
     }
 
+
+
+
+
+@app.get("/shap-analysis")
+def shap_analysis(medicine_id: str):
+    """Retourne l'importance des variables (SHAP) pour un médicament."""
+    if model is None:
+        raise HTTPException(503, "Modèle non disponible.")
+
+    history = get_medicine_history(identifier=medicine_id, days=30)
+    if not history or len(history) < 5:
+        return {"error": "Pas assez d'historique pour calculer SHAP."}
+
+    # Préparer les features basées sur le dernier jour de l'historique
+    hist = history[-30:] if len(history) >= 30 else history
+    if len(hist) < 30:
+        hist = [45.0] * (30 - len(hist)) + hist  # valeur par défaut
+
+    lag_1 = hist[-1]
+    lag_7 = hist[-7]
+    lag_30 = hist[0]
+    rolling_mean_7 = sum(hist[-7:]) / 7
+    rolling_mean_30 = sum(hist) / 30
+
+    last_date = date.today() - timedelta(days=1)
+    dow = last_date.weekday()
+    month = last_date.month
+    is_weekend = 1 if dow >= 5 else 0
+    season = 1 if month in [6,7,8,9,10] else 0
+
+    features = {
+        'day_of_week': dow,
+        'month': month,
+        'is_weekend': is_weekend,
+        'season': season,
+        'lag_1': lag_1,
+        'lag_7': lag_7,
+        'lag_30': lag_30,
+        'rolling_mean_7': rolling_mean_7,
+        'rolling_mean_30': rolling_mean_30,
+        'price': 2500
+    }
+
+    X = pd.DataFrame([features])[features_list]
+
+    explainer = shap.TreeExplainer(model)
+    shap_values = explainer.shap_values(X)
+
+    feature_importance = []
+    for i, name in enumerate(features_list):
+        feature_importance.append({
+            "name": name,
+            "importance": float(shap_values[0][i])
+        })
+
+    return {
+        "medicine_id": medicine_id,
+        "features": feature_importance
+    }
+
+
+
 # ---------- CHATBOT ASSISTANT ----------
 @app.post("/chat")
 def chat(request: ChatRequest):
@@ -346,3 +448,4 @@ def chat(request: ChatRequest):
 
 print("\n✅ API DENG PHARMA prête !")
 print("📖 Documentation : http://127.0.0.1:8001/docs")
+

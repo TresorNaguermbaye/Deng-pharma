@@ -28,15 +28,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     );
   }
 
-  return (
-    <DashboardProvider>
-      <div className="min-h-screen bg-slate-50">
-        <Topbar />
-        <div className="flex pt-16">
+return (
+  <DashboardProvider>
+    <div className="min-h-screen bg-slate-50">
+      <Topbar />
+      <div className="flex pt-16">
+        {/* La sidebar est masquée sur mobile grâce à hidden lg:block */}
+        <div className="hidden lg:block">
           <Sidebar />
-          <main className="flex-1 ml-64 p-6">{children}</main>
         </div>
+        <main className="flex-1 ml-0 lg:ml-64 p-0 md:p-6">{children}</main>
       </div>
-    </DashboardProvider>
-  );
+    </div>
+  </DashboardProvider>
+);
 }

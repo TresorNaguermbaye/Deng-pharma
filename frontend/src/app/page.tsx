@@ -15,6 +15,8 @@ import {
   TrendingUp, TrendingDown, DollarSign, ShoppingCart, Package,
   AlertTriangle, Brain, CloudRain, RefreshCw, BarChart3, PieChart,
   Search, Bell, Settings, LogOut, Menu, X, Sun, Moon, Pill, LayoutDashboard,
+  FileBarChart,
+  Users,
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -87,14 +89,19 @@ export default function DashboardPage() {
   };
 
   // Navigation locale pour la sidebar mobile
-  const navItems = [
-    { label: "Dashboard", href: "/", icon: LayoutDashboard },
-    { label: "Médicaments", href: "/medicines", icon: Pill },
-    { label: "Stocks", href: "/inventory", icon: Package },
-    { label: "Ventes", href: "/sales", icon: ShoppingCart },
-    { label: "Analytics", href: "/analytics", icon: BarChart3 },
-    { label: "Chat IA", href: "/ai/chat", icon: Brain },
-  ];
+const navItems = [
+  { label: "Dashboard", href: "/", icon: TrendingUp },
+  { label: "Médicaments", href: "/medicines", icon: Pill },
+  { label: "Stocks", href: "/inventory", icon: Package },
+  { label: "Ventes", href: "/sales", icon: ShoppingCart },
+  { label: "Rapports", href: "/reports", icon: FileBarChart }, 
+  { label: "Analytics", href: "/analytics", icon: BarChart3 },
+  { label: "Chat IA", href: "/ai/chat", icon: Brain },
+  { label: "IA Prédictions", href: "/ai/predictions", icon: Brain },
+  { label: "Notifications", href: "/notifications", icon: Bell },
+  
+  { label: "Utilisateurs", href: "/admin/users", icon: Users },
+];
 
   if (loading) {
     return (
@@ -181,7 +188,7 @@ export default function DashboardPage() {
       )}
 
       {/* Contenu principal */}
-      <main className="pt-16 lg:pl-64 p-4 md:p-8 space-y-6">
+      <main className="pt-20 lg:pl-64 p-4 md:p-30 space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">Dashboard</h1>

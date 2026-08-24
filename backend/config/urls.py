@@ -1,9 +1,10 @@
+# config/urls.py
 from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 
-from rapport_pdf_view import sales_report, stock_report, alert_report, user_report
+from apps.reporting.views import sales_report, stock_report, alert_report, user_report
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -14,10 +15,10 @@ urlpatterns = [
     path('api/analytics/', include('apps.analytics.urls')),
     path('api/reports/sales/', sales_report, name='report-sales'),
     path('api/reports/stock/', stock_report, name='report-stock'),
-    path('api/ai/', include('apps.ai_integration.urls')),
     path('api/reports/alerts/', alert_report, name='report-alerts'),
-    path('api/orders/', include('apps.orders.urls')),
     path('api/reports/users/', user_report, name='report-users'),
+    path('api/ai/', include('apps.ai_integration.urls')),
+    path('api/orders/', include('apps.orders.urls')),
     path('api/notifications/', include('apps.notifications.urls')),
 ]
 

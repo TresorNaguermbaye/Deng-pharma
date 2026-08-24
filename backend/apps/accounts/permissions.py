@@ -1,10 +1,11 @@
 from rest_framework.permissions import BasePermission, SAFE_METHODS
 
-class IsAdmin(BasePermission):
-    """Autorise uniquement les administrateurs."""
+
+class IsAdminRole(BasePermission):
+    """Autorise uniquement les utilisateurs ayant le rôle ADMIN."""
     def has_permission(self, request, view):
         return request.user.is_authenticated and request.user.role == 'ADMIN'
-
+    
 class IsGestionnaire(BasePermission):
     """Autorise les gestionnaires et les administrateurs."""
     def has_permission(self, request, view):

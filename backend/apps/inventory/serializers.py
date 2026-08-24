@@ -1,9 +1,7 @@
-# backend/apps/inventory/serializers.py
 from datetime import date
 from django.db import models
 from rest_framework import serializers
 from .models import StockLot, StockMovement
-from apps.medicines.serializers import MedicineListSerializer
 
 class StockLotSerializer(serializers.ModelSerializer):
     medicine_name = serializers.CharField(source='medicine.commercial_name', read_only=True)
@@ -48,7 +46,6 @@ class StockMovementSerializer(serializers.ModelSerializer):
                 if lot.quantity < data['quantity']:
                     raise serializers.ValidationError("Quantité insuffisante dans le lot sélectionné.")
             else:
-                # Vérification du stock global (FEFO automatique dans la vue)
                 total_stock = StockLot.objects.filter(
                     medicine=medicine,
                     expiry_date__gte=date.today()

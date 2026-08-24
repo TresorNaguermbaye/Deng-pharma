@@ -31,3 +31,20 @@ docker-compose.override.yml
 
 # Jupyter Notebooks
 .ipynb_checkpoints/
+
+# Tests et couverture
+coverage/
+htmlcov/
+.pytest_cache/
+
+# Environnements virtuels
+.venv/
+env/
+
+# Certificats et clés
+*.pem
+*.key
+
+# Fichiers de build frontend
+.next/cache/
+out/
