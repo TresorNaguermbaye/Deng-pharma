@@ -26,6 +26,7 @@ import {
   Menu, X, Brain, Target, AlertTriangle, Activity, TrendingUp, BarChart3,
   LayoutDashboard, Pill, Package, ShoppingCart, FileBarChart, Bell, Users, LogOut
 } from "lucide-react";
+import { subscribeToPush } from "@/lib/push"; // <-- import ajouté
 
 const profileSchema = z.object({
   first_name: z.string().min(2, "Prénom requis"),
@@ -174,6 +175,17 @@ export default function SettingsPage() {
       toast.error("Erreur");
     } finally {
       setTrainingLoading(false);
+    }
+  };
+
+  // Nouvelle fonction pour activer les notifications push
+  const handleEnablePush = async () => {
+    try {
+      await subscribeToPush(api);
+      toast.success("Notifications push activées avec succès");
+    } catch (error: any) {
+      console.error("Erreur push:", error);
+      toast.error(error.message || "Impossible d'activer les notifications push");
     }
   };
 
@@ -410,6 +422,18 @@ export default function SettingsPage() {
                     onCheckedChange={(checked) => profileForm.setValue("push_notifications", checked)}
                   />
                 </div>
+
+                {/* Nouveau bouton pour activer réellement les notifications push */}
+                <div className="pt-2">
+                  <Button
+                    type="button"
+                    onClick={handleEnablePush}
+                    className="bg-gradient-to-r from-[#0ABAB5] to-blue-600 text-white w-full sm:w-auto"
+                  >
+                    Activer les notifications push
+                  </Button>
+                </div>
+
                 <Button onClick={profileForm.handleSubmit(onSubmitProfile)} disabled={updateProfileMutation.isPending} className="bg-[#0ABAB5] hover:bg-[#0a9e99] text-white px-6">
                   Enregistrer les préférences
                 </Button>

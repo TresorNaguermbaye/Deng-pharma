@@ -1,20 +1,18 @@
 # backend/apps/accounts/views.py
+import logging
+
+from django.contrib.auth.password_validation import validate_password
+from django.contrib.auth.tokens import PasswordResetTokenGenerator
+from django.core.exceptions import ValidationError
+from django.core.mail import send_mail
+from django.conf import settings
+from django.utils.encoding import force_bytes, force_str
+from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from rest_framework import viewsets, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated, IsAdminUser
+from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
 from rest_framework.parsers import MultiPartParser, FormParser
-from django.contrib.auth.password_validation import validate_password
-from django.core.exceptions import ValidationError
-from django.shortcuts import get_object_or_404
-from rest_framework.permissions import AllowAny
-from django.core.mail import send_mail
-from django.conf import settings
-from django.urls import reverse
-from django.utils import timezone
-from datetime import timedelta
-from .models import PasswordResetToken
-import uuid
 
 from .models import User, UserProfile
 from .serializers import (
@@ -23,21 +21,24 @@ from .serializers import (
     ChangePasswordSerializer,
 )
 
+logger = logging.getLogger(__name__)
+
+
 class UserViewSet(viewsets.ModelViewSet):
     """
     CRUD complet pour les utilisateurs (réservé aux administrateurs).
     """
     queryset = User.objects.all()
     serializer_class = UserSerializer
-    permission_classes = [IsAdminUser]  # Seul l'admin peut gérer les utilisateurs
+    permission_classes = [IsAdminUser]
 
     def get_queryset(self):
         qs = super().get_queryset()
-        # Filtrage optionnel par rôle
         role = self.request.query_params.get('role')
         if role:
             qs = qs.filter(role=role)
         return qs
+
 
 class MeView(APIView):
     """Récupère ou met à jour le profil de l'utilisateur connecté."""
@@ -49,19 +50,16 @@ class MeView(APIView):
 
     def put(self, request):
         user = request.user
-        # Mise à jour des champs de base
         user.first_name = request.data.get('first_name', user.first_name)
         user.last_name = request.data.get('last_name', user.last_name)
         user.email = request.data.get('email', user.email)
         user.save()
 
-        # Mise à jour ou création du profil étendu
         profile, created = UserProfile.objects.get_or_create(user=user)
         if 'langue' in request.data:
             profile.langue = request.data['langue']
         if 'devise' in request.data:
             profile.devise = request.data['devise']
-        # Conversion des booléens (peuvent arriver comme string "true"/"false")
         if 'email_notifications' in request.data:
             profile.email_notifications = self._to_bool(request.data['email_notifications'])
         if 'push_notifications' in request.data:
@@ -72,7 +70,6 @@ class MeView(APIView):
         return Response(serializer.data)
 
     def _to_bool(self, value):
-        """Convertit une valeur en booléen, qu'elle soit bool, string ou int."""
         if isinstance(value, bool):
             return value
         if isinstance(value, str):
@@ -80,6 +77,7 @@ class MeView(APIView):
         if isinstance(value, int):
             return value != 0
         return False
+
 
 class ChangePasswordView(APIView):
     """Change le mot de passe de l'utilisateur connecté."""
@@ -100,6 +98,7 @@ class ChangePasswordView(APIView):
             return Response({"success": "Mot de passe modifié avec succès."}, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+
 class UploadPhotoView(APIView):
     """Upload de la photo de profil."""
     permission_classes = [IsAuthenticated]
@@ -115,77 +114,68 @@ class UploadPhotoView(APIView):
         return Response({"error": "Aucun fichier photo fourni."}, status=status.HTTP_400_BAD_REQUEST)
 
 
-
 class PasswordResetRequestView(APIView):
-    """Demande de réinitialisation : génère un token et envoie un email."""
+    """Demande de réinitialisation : génère un token standard et envoie un email."""
     permission_classes = [AllowAny]
 
     def post(self, request):
         email = request.data.get('email')
         user = User.objects.filter(email=email).first()
         if user:
-            # Supprimer les anciens tokens non utilisés pour cet utilisateur
-            PasswordResetToken.objects.filter(user=user, is_used=False).delete()
-            # Créer un nouveau token
-            token = PasswordResetToken.objects.create(
-                user=user,
-                expires_at=timezone.now() + timedelta(hours=1)  # valable 1 heure
-            )
-            # Construire le lien de réinitialisation
-            reset_url = f"{settings.FRONTEND_URL}/reset-password?token={token.token}"
-            subject = "Réinitialisation de votre mot de passe DENG PHARMA"
+            token_generator = PasswordResetTokenGenerator()
+            token = token_generator.make_token(user)
+            uid = urlsafe_base64_encode(force_bytes(user.pk))
+
+            reset_url = f"{settings.FRONTEND_URL}/reset-password?uid={uid}&token={token}"
+
+            subject = "Réinitialisation de votre mot de passe - DENG PHARMA"
             message = f"""
-Bonjour {user.first_name or user.username},
+Bonjour {user.username},
 
-Vous avez demandé la réinitialisation de votre mot de passe.
-Cliquez sur le lien ci-dessous pour définir un nouveau mot de passe (valable 1 heure) :
-
+Cliquez sur le lien suivant pour réinitialiser votre mot de passe :
 {reset_url}
 
-Si vous n'êtes pas à l'origine de cette demande, ignorez cet email.
-
-Cordialement,
-L'équipe DENG PHARMA
+Si vous n'avez pas demandé cette réinitialisation, ignorez cet email.
 """
-            send_mail(
-                subject,
-                message,
-                settings.DEFAULT_FROM_EMAIL,
-                [user.email],
-                fail_silently=False,
-            )
-        # Toujours renvoyer le même message (sécurité)
-        return Response({"message": "Si un compte existe, un email de réinitialisation a été envoyé."})
+            try:
+                send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, [user.email], fail_silently=False)
+            except Exception as e:
+                logger.error(f"Erreur envoi email réinitialisation: {e}")
+                return Response({'error': "Erreur lors de l'envoi de l'email."}, status=500)
+
+        return Response({'success': 'Si un compte existe avec cet email, un lien de réinitialisation a été envoyé.'})
+
 
 class PasswordResetConfirmView(APIView):
-    """Réinitialisation du mot de passe avec token."""
+    """Réinitialise le mot de passe avec uid et token standards."""
     permission_classes = [AllowAny]
 
     def post(self, request):
-        token_str = request.data.get('token')
+        uid = request.data.get('uid')
+        token = request.data.get('token')
         new_password = request.data.get('new_password')
 
-        if not token_str or not new_password:
-            return Response({"error": "Token et nouveau mot de passe requis."}, status=status.HTTP_400_BAD_REQUEST)
+        if not all([uid, token, new_password]):
+            return Response({'error': 'Paramètres manquants.'}, status=400)
 
         try:
-            token = PasswordResetToken.objects.get(token=token_str)
-        except PasswordResetToken.DoesNotExist:
-            return Response({"error": "Token invalide ou expiré."}, status=status.HTTP_400_BAD_REQUEST)
+            user_id = force_str(urlsafe_base64_decode(uid))
+            user = User.objects.get(pk=user_id)
+        except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+            user = None
 
-        if not token.is_valid():
-            return Response({"error": "Token invalide ou expiré."}, status=status.HTTP_400_BAD_REQUEST)
+        token_generator = PasswordResetTokenGenerator()
+        if user is None or not token_generator.check_token(user, token):
+            return Response({'error': 'Lien de réinitialisation invalide ou expiré.'}, status=400)
 
-        user = token.user
+        try:
+            validate_password(new_password, user)
+        except ValidationError as e:
+            return Response({'error': e.messages}, status=400)
+
         user.set_password(new_password)
         user.save()
-
-        # Marquer le token comme utilisé
-        token.is_used = True
-        token.save()
-
-        return Response({"success": "Mot de passe mis à jour avec succès."})
-
+        return Response({'success': 'Mot de passe réinitialisé avec succès.'})
 
 
 class CompleteOnboardingView(APIView):
@@ -198,12 +188,12 @@ class CompleteOnboardingView(APIView):
         user.save(update_fields=['has_completed_onboarding'])
         return Response({"status": "onboarding completed"})
 
+
 class PharmacyLogoView(APIView):
     """Renvoie l'URL du logo de la pharmacie (photo du premier admin)."""
     permission_classes = [AllowAny]
 
     def get(self, request):
-        # Récupère le premier utilisateur avec rôle ADMIN ayant une photo de profil
         admin_user = User.objects.filter(role='ADMIN', profile__photo__isnull=False).first()
         if admin_user and admin_user.profile.photo:
             logo_url = request.build_absolute_uri(admin_user.profile.photo.url)

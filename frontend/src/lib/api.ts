@@ -303,10 +303,10 @@ class ApiClient {
   }
 
 
-  async confirmPasswordReset(token: string, newPassword: string) {
+  async confirmPasswordReset(uid: string, token: string, newPassword: string) {
   return this.request('/auth/password-reset/confirm/', {
     method: 'POST',
-    body: JSON.stringify({ token, new_password: newPassword }),
+    body: JSON.stringify({ uid, token, new_password: newPassword }),
   });
   }
 

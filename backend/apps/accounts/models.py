@@ -1,10 +1,8 @@
 # backend/apps/accounts/models.py
-from datetime import timezone
 import uuid
 
 from django.contrib.auth.models import AbstractUser
 from django.db import models
-from datetime import timedelta
 from django.conf import settings
 
 
@@ -42,16 +40,3 @@ class UserProfile(models.Model):
 
     def __str__(self):
         return f"Profil de {self.user.username}"
-class PasswordResetToken(models.Model):
-    """Token de réinitialisation de mot de passe avec expiration."""
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
-    token = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
-    expires_at = models.DateTimeField()
-    is_used = models.BooleanField(default=False)
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    def is_valid(self):
-        return not self.is_used and self.expires_at > timezone.now()
-
-    def __str__(self):
-        return f"Reset token pour {self.user.email}"

@@ -40,7 +40,7 @@ htmlcov/
 # Environnements virtuels
 .venv/
 env/
-
+.env.prod
 # Certificats et clés
 *.pem
 *.key

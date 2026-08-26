@@ -6,6 +6,7 @@ from datetime import timedelta
 
 from apps.medicines.models import Medicine
 from apps.notifications.models import Notification
+from apps.notifications.utils import send_push_notification   # <-- import ajouté
 from apps.accounts.models import User
 from apps.inventory.models import StockLot
 from apps.sales.models import SaleItem
@@ -34,12 +35,10 @@ def check_ai_alerts():
 
             # Pic de demande
             if historical_avg and avg_7d > historical_avg * 1.5:
+                message = f"Pic de demande prévu pour {med.commercial_name} : {avg_7d:.1f} unités/jour en moyenne (vs {historical_avg:.1f})."
                 for admin in admins:
-                    Notification.objects.create(
-                        user=admin,
-                        type='AI_PREDICTION',
-                        message=f"Pic de demande prévu pour {med.commercial_name} : {avg_7d:.1f} unités/jour en moyenne (vs {historical_avg:.1f})."
-                    )
+                    Notification.objects.create(user=admin, type='AI_PREDICTION', message=message)
+                    send_push_notification(admin, "DENG PHARMA", message)   # <-- push
 
             # Suggestion de commande
             current_stock = StockLot.objects.filter(
@@ -48,12 +47,11 @@ def check_ai_alerts():
             ).aggregate(total=Sum('quantity'))['total'] or 0
             needed_7d = avg_7d * 7
             if current_stock < needed_7d:
+                message = f"Commander maintenant : {med.commercial_name} – stock actuel {current_stock}, besoin estimé {needed_7d:.0f} unités pour 7 jours."
                 for admin in admins:
-                    Notification.objects.create(
-                        user=admin,
-                        type='AI_PREDICTION',
-                        message=f"Commander maintenant : {med.commercial_name} – stock actuel {current_stock}, besoin estimé {needed_7d:.0f} unités pour 7 jours."
-                    )
+                    Notification.objects.create(user=admin, type='AI_PREDICTION', message=message)
+                    send_push_notification(admin, "DENG PHARMA", message)   # <-- push
+
         except Exception as e:
             print(f"Erreur IA pour {med.commercial_name}: {e}")
 

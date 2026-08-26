@@ -4,12 +4,27 @@ from django.contrib.auth.password_validation import validate_password
 from .models import User, UserProfile
 
 class UserSerializer(serializers.ModelSerializer):
-    """Sérialiseur pour la gestion des utilisateurs (admin)."""
+    password = serializers.CharField(write_only=True, required=False, allow_blank=True)
+
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'role', 'last_login', 'is_active']
+        fields = ['id', 'username', 'email', 'password', 'role', 'last_login', 'is_active']
         read_only_fields = ['last_login']
 
+    def create(self, validated_data):
+        password = validated_data.pop('password', None)
+        user = User.objects.create_user(**validated_data, password=password)
+        return user
+
+    def update(self, instance, validated_data):
+        password = validated_data.pop('password', None)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        if password:
+            instance.set_password(password)
+        instance.save()
+        return instance
+    
 class UserProfileSerializer(serializers.ModelSerializer):
     """Sérialiseur du profil étendu (photo, langue, devise, notifications)."""
     class Meta:

@@ -4,6 +4,7 @@ from django.core.mail import send_mail
 from django.conf import settings
 from .models import StockMovement, StockLot
 from apps.notifications.models import Notification
+from apps.notifications.utils import send_push_notification   # <-- import ajouté
 from apps.accounts.models import User
 from django.db.models import Sum
 from datetime import date
@@ -34,6 +35,7 @@ def handle_stock_movement(sender, instance, created, **kwargs):
             message = f"🚨 RUPTURE : {medicine.commercial_name} est en rupture de stock !"
             for user in recipients:
                 Notification.objects.create(user=user, type='STOCK_OUT', message=message)
+                send_push_notification(user, "DENG PHARMA", message)   # <-- notification push
                 try:
                     send_mail(
                         'DENG PHARMA - Alerte Rupture',
@@ -44,13 +46,12 @@ def handle_stock_movement(sender, instance, created, **kwargs):
                     )
                 except:
                     pass
-        
 
-        
         elif total_stock <= medicine.min_stock:
             message = f"⚠️ STOCK FAIBLE : {medicine.commercial_name} - {total_stock} restants (min: {medicine.min_stock})"
             for user in recipients:
                 Notification.objects.create(user=user, type='STOCK_LOW', message=message)
+                send_push_notification(user, "DENG PHARMA", message)   # <-- notification push
                 try:
                     send_mail(
                         'DENG PHARMA - Alerte Stock Faible',
@@ -61,6 +62,3 @@ def handle_stock_movement(sender, instance, created, **kwargs):
                     )
                 except:
                     pass
-
-
-        
