@@ -1,0 +1,143 @@
+services:
+  # ========== BASE DE DONNÉES POSTGRESQL ==========
+  - type: pgsql
+    name: deng-pharma-db
+    plan: free
+    databaseName: deng_pharma_db
+    user: deng_user
+    ipAllowList: []
+
+  # ========== REDIS ==========
+  - type: redis
+    name: deng-pharma-redis
+    plan: free
+    maxmemory: 100
+
+  # ========== BACKEND DJANGO ==========
+  - type: web
+    name: deng-pharma-backend
+    env: python
+    plan: free
+    buildCommand: |
+      cd backend
+      pip install -r requirements.txt
+      python manage.py migrate
+      python manage.py collectstatic --noinput
+    startCommand: |
+      cd backend
+      gunicorn config.wsgi:application --bind 0.0.0.0:10000
+    healthCheckPath: /api/auth/health/
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: deng-pharma-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: deng-pharma-redis
+          type: redis
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DEBUG
+        value: "False"
+      - key: ALLOWED_HOSTS
+        value: "localhost,127.0.0.1,.onrender.com"
+      - key: FRONTEND_URL
+        value: "https://deng-pharma-frontend.onrender.com"
+      - key: CORS_ALLOWED_ORIGINS
+        value: "https://deng-pharma-frontend.onrender.com,https://deng-pharma-frontend.onrender.com"
+      - key: PYTHON_VERSION
+        value: "3.12.0"
+
+  # ========== SERVICE IA FASTAPI ==========
+  - type: web
+    name: deng-pharma-ai
+    env: python
+    plan: free
+    buildCommand: |
+      cd ai_service
+      pip install -r requirements.txt
+    startCommand: |
+      cd ai_service
+      uvicorn main:app --host 0.0.0.0 --port 10000
+    healthCheckPath: /health
+    envVars:
+      - key: MODEL_PATH
+        value: /app/models
+
+  # ========== FRONTEND NEXT.JS ==========
+  - type: web
+    name: deng-pharma-frontend
+    env: node
+    plan: free
+    buildCommand: |
+      cd frontend
+      npm install
+      npm run build
+    startCommand: |
+      cd frontend
+      npm run start
+    envVars:
+      - key: NEXT_PUBLIC_API_URL
+        value: "https://deng-pharma-backend.onrender.com/api"
+      - key: NEXT_PUBLIC_APP_URL
+        value: "https://deng-pharma-frontend.onrender.com"
+      - key: NODE_VERSION
+        value: "20.0.0"
+
+  # ========== CELERY WORKER ==========
+  - type: worker
+    name: deng-pharma-celery-worker
+    env: python
+    plan: free
+    buildCommand: |
+      cd backend
+      pip install -r requirements.txt
+    startCommand: |
+      cd backend
+      celery -A config worker -l info
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: deng-pharma-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: deng-pharma-redis
+          type: redis
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DEBUG
+        value: "False"
+      - key: DJANGO_SETTINGS_MODULE
+        value: "config.settings"
+
+  # ========== CELERY BEAT ==========
+  - type: worker
+    name: deng-pharma-celery-beat
+    env: python
+    plan: free
+    buildCommand: |
+      cd backend
+      pip install -r requirements.txt
+    startCommand: |
+      cd backend
+      celery -A config beat -l info
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: deng-pharma-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: deng-pharma-redis
+          type: redis
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DEBUG
+        value: "False"
+      - key: DJANGO_SETTINGS_MODULE
+        value: "config.settings"

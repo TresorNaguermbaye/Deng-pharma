@@ -32,13 +32,21 @@ class ApiClient {
 
   // ========== Authentification ==========
   async login(username: string, password: string) {
-    const data = await this.request('/auth/token/', {
-      method: 'POST',
-      body: JSON.stringify({ username, password }),
-    });
-    if (data.access) this.setToken(data.access);
-    return data;
+  console.log('🔐 Tentative de login...');
+  const data = await this.request('/auth/token/', {
+    method: 'POST',
+    body: JSON.stringify({ username, password }),
+  });
+  console.log('📦 Données reçues:', data);
+  if (data.access) {
+    console.log('✅ Token trouvé, stockage...');
+    this.setToken(data.access);
+    console.log('💾 Token après stockage:', localStorage.getItem('auth_token'));
+  } else {
+    console.log('❌ Pas de token dans la réponse');
   }
+  return data;
+}
 
   async getMe() {
     return this.request('/auth/me/');

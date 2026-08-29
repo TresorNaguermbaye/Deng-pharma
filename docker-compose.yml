@@ -12,11 +12,7 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD}
     ports:
       - "5432:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U deng_user"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+    restart: unless-stopped
     networks:
       - deng_network
 
@@ -25,6 +21,7 @@ services:
     container_name: deng_redis
     ports:
       - "6379:6379"
+    restart: unless-stopped
     networks:
       - deng_network
 
@@ -46,10 +43,9 @@ services:
       - EMAIL_HOST_USER=${EMAIL_HOST_USER}
       - EMAIL_HOST_PASSWORD=${EMAIL_HOST_PASSWORD}
     depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_started
+      - db
+      - redis
+    restart: on-failure
     networks:
       - deng_network
 
@@ -67,7 +63,7 @@ services:
     depends_on:
       - db
       - redis
-      - backend
+    restart: on-failure
     networks:
       - deng_network
 
@@ -85,20 +81,21 @@ services:
     depends_on:
       - db
       - redis
-      - backend
+    restart: on-failure
     networks:
       - deng_network
 
   ai-service:
     build: ./ai_service
     container_name: deng_ai_service
-    command: uvicorn main:app --host 0.0.0.0 --port 8001
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8001
     volumes:
       - ./ai_service:/app
     environment:
       - MODEL_PATH=/app/models
     ports:
       - "8001:8001"
+    restart: on-failure
     networks:
       - deng_network
 
@@ -106,14 +103,15 @@ services:
     build: ./frontend
     container_name: deng_frontend
     volumes:
-      - ./frontend:/app
+      - ./frontend/.next/standalone:/app
+      - ./frontend/.next/static:/app/.next/static
+      - ./frontend/public:/app/public
     environment:
       - NEXT_PUBLIC_API_URL=${FRONTEND_API_URL}
       - NEXT_PUBLIC_APP_URL=${FRONTEND_URL}
     ports:
-      - "3000:3000"
-    depends_on:
-      - backend
+      - "3001:3000"
+    restart: on-failure
     networks:
       - deng_network
 
@@ -131,6 +129,7 @@ services:
       - backend
       - frontend
       - ai-service
+    restart: on-failure
     networks:
       - deng_network
 
