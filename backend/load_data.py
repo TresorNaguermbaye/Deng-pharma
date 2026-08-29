@@ -8,7 +8,7 @@ from django.core.management import call_command
 
 print("🔄 Chargement des données...")
 try:
-    call_command('loaddata', 'data_dump.json', ignore_nonexistent=True)
+    call_command('loaddata', 'data_dump.json', ignorenonexistent=True)
     print("✅ Données chargées avec succès !")
 except Exception as e:
     print(f"❌ Erreur: {e}")
