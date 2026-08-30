@@ -3,32 +3,124 @@
 DENG PHARMA - Service IA
 API de prévision des ventes, détection ruptures, recommandations
 Modèle XGBoost entraîné sur dataset Tchadien
+Version PostgreSQL pour production
 """
 import json
-from venv import logger
-
-import requests
-import subprocess
+import os
 import sys
+import subprocess
+import urllib.parse
+from datetime import date, timedelta
+from typing import Optional, List, Dict
 
+import joblib
+import numpy as np
+import pandas as pd
+import psycopg2
 import shap
-from fastapi import FastAPI, Query, HTTPException
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Optional, List, Dict
-import pandas as pd
-import numpy as np
-import joblib
-import os
-from datetime import date, timedelta
-import sqlite3
 
-# Chemin vers la base de données SQLite de Django
-DB_PATH = os.path.join(os.path.dirname(__file__), '..', '..', 'backend', 'db.sqlite3')
+# ==========================================
+# CONNEXION À LA BASE DE DONNÉES POSTGRESQL
+# ==========================================
+
+DATABASE_URL = os.getenv('DATABASE_URL')
+
+def get_db_connection():
+    """Retourne une connexion à la base de données PostgreSQL"""
+    if not DATABASE_URL:
+        print("❌ DATABASE_URL non définie !")
+        return None
+    try:
+        result = urllib.parse.urlparse(DATABASE_URL)
+        conn = psycopg2.connect(
+            database=result.path[1:],
+            user=result.username,
+            password=result.password,
+            host=result.hostname,
+            port=result.port or 5432
+        )
+        return conn
+    except Exception as e:
+        print(f"❌ Erreur de connexion à la base: {e}")
+        return None
+
+def get_commercial_name_from_uuid(identifier: str) -> Optional[str]:
+    """Récupère le nom commercial d'un médicament depuis PostgreSQL"""
+    if not identifier:
+        return None
+    
+    clean_uuid = identifier.strip()
+    
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return None
+        cursor = conn.cursor()
+        query = "SELECT commercial_name FROM medicines_medicine WHERE id = %s"
+        cursor.execute(query, (clean_uuid,))
+        row = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        
+        if row:
+            return row[0]
+    except Exception as e:
+        print(f"❌ Erreur base de données (get_commercial_name): {e}")
+    
+    return None
+
+def get_medicine_history(identifier: str, medicine_name: Optional[str] = None, days: int = 30):
+    """Récupère l'historique des ventes depuis PostgreSQL"""
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return None
+        
+        cursor = conn.cursor()
+        
+        if medicine_name:
+            search_name = medicine_name
+        else:
+            search_name = get_commercial_name_from_uuid(identifier)
+            if not search_name:
+                cursor.close()
+                conn.close()
+                return None
+        
+        query = """
+            SELECT DATE(s.created_at) AS date, COALESCE(SUM(si.quantity), 0) AS sales
+            FROM sales_saleitem si
+            JOIN sales_sale s ON si.sale_id = s.id
+            JOIN medicines_medicine m ON si.medicine_id = m.id
+            WHERE m.commercial_name = %s
+            GROUP BY DATE(s.created_at)
+            ORDER BY date DESC
+            LIMIT %s
+        """
+        cursor.execute(query, (search_name, days))
+        rows = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        
+        if not rows:
+            return None
+        
+        result = []
+        for row in reversed(rows):
+            result.append(float(row[1]) if row[1] else 0.0)
+        
+        return result
+    except Exception as e:
+        print(f"❌ Erreur historique: {e}")
+        return None
 
 # ==========================================
 # CHARGEMENT DU MODÈLE
 # ==========================================
+
 MODELS_DIR = os.path.join(os.path.dirname(__file__), '..', 'models')
 
 print("🚀 Démarrage de DENG PHARMA IA...")
@@ -45,12 +137,13 @@ try:
     print(f"✅ Modèle chargé : xgboost_tchad.pkl")
     print(f"📊 Features : {features_list}")
 except FileNotFoundError as e:
-    print(f"⚠️  Modèle non trouvé : {e}")
+    print(f"⚠️ Modèle non trouvé : {e}")
     print("   Lancez d'abord l'entraînement dans le notebook Jupyter")
 
 # ==========================================
 # APPLICATION FASTAPI
 # ==========================================
+
 app = FastAPI(
     title="DENG PHARMA - Service IA Tchad",
     description="""
@@ -67,14 +160,21 @@ app = FastAPI(
     version="2.0.0"
 )
 
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"]
+)
 
 # ==========================================
 # MODÈLES DE DONNÉES
 # ==========================================
+
 class PredictionRequest(BaseModel):
     medicine_id: str = "MED003"
-    medicine_name: Optional[str] = None   # <-- ajout pour recevoir le nom commercial
+    medicine_name: Optional[str] = None
     days_ahead: int = 7
 
 class StockAnalysisRequest(BaseModel):
@@ -102,7 +202,19 @@ def root():
         "service": "DENG PHARMA IA",
         "version": "2.0.0",
         "model_loaded": model is not None,
-        "endpoints": ["/predict", "/analyze/stock", "/recommend/order", "/criticality", "/seasonal-analysis", "/chat"]
+        "database": "PostgreSQL",
+        "endpoints": [
+            "/predict",
+            "/analyze/stock",
+            "/recommend/order",
+            "/criticality",
+            "/seasonal-analysis",
+            "/chat",
+            "/health",
+            "/model-performance",
+            "/shap-analysis",
+            "/train"
+        ]
     }
 
 @app.get("/health")
@@ -110,11 +222,9 @@ def health():
     return {
         "status": "healthy",
         "model_loaded": model is not None,
+        "database": "PostgreSQL",
         "features": features_list
     }
-
-
-
 
 @app.get("/model-performance")
 def model_performance():
@@ -133,7 +243,6 @@ def model_performance():
             "model_version": None
         }
 
-
 @app.post("/train")
 def train_model_endpoint():
     """Lance l'entraînement du modèle en arrière-plan."""
@@ -143,53 +252,10 @@ def train_model_endpoint():
         return {"status": "Entraînement lancé en arrière-plan"}
     except Exception as e:
         raise HTTPException(500, f"Erreur lors du lancement : {e}")
-    
-# ---------- FONCTIONS UTILITAIRES POUR L'HISTORIQUE ----------
 
-
-def get_commercial_name_from_uuid(medicine_uuid: str) -> Optional[str]:
-    """Retourne le nom commercial à partir d'un UUID Django (sans tirets en base)."""
-    conn = sqlite3.connect(DB_PATH)
-    # Enlever les tirets car la base stocke l'UUID sans tirets (char(32))
-    clean_uuid = medicine_uuid.replace('-', '')
-    query = "SELECT commercial_name FROM medicines_medicine WHERE id = ?"
-    cursor = conn.execute(query, (clean_uuid,))
-    row = cursor.fetchone()
-    conn.close()
-    return row[0] if row else None
-
-
-def get_medicine_history(identifier: str, medicine_name: Optional[str] = None, days: int = 30):
-    conn = sqlite3.connect(DB_PATH)
-    # Si un nom est fourni, on l'utilise directement
-    if medicine_name:
-        search_name = medicine_name
-    else:
-        # Sinon, essayer de retrouver le nom via l'UUID
-        search_name = get_commercial_name_from_uuid(identifier)
-        if not search_name:
-            conn.close()
-            return None
-
-    query = """
-        SELECT DATE(s.created_at) AS date, SUM(si.quantity) AS sales
-        FROM sales_saleitem si
-        JOIN sales_sale s ON si.sale_id = s.id
-        JOIN medicines_medicine m ON si.medicine_id = m.id
-        WHERE m.commercial_name = ?
-        GROUP BY DATE(s.created_at)
-        ORDER BY date DESC
-        LIMIT ?
-    """
-    df = pd.read_sql_query(query, conn, params=(search_name, days))
-    conn.close()
-    if df.empty:
-        return None
-    df['date'] = pd.to_datetime(df['date'])
-    df = df.sort_values('date')
-    return [float(x) for x in df['sales'].tolist()]
-
-
+# ==========================================
+# PRÉDICTION DES VENTES
+# ==========================================
 
 @app.post("/predict")
 def predict_sales(request: PredictionRequest):
@@ -199,22 +265,19 @@ def predict_sales(request: PredictionRequest):
     today = date.today()
     predictions = []
 
-
     history = get_medicine_history(
-    identifier=request.medicine_id,
-    medicine_name=request.medicine_name,
-    days=30
+        identifier=request.medicine_id,
+        medicine_name=request.medicine_name,
+        days=30
     )
 
-    print(f"DEBUG: medicine_name reçu = '{request.medicine_name}', historique trouvé = {history is not None}, longueur = {len(history) if history else 0}")
+    print(f"DEBUG: medicine_name = '{request.medicine_name}', historique = {len(history) if history else 0}")
 
-    # Définir les lags à partir de l'historique, ou utiliser les valeurs par défaut
     base = 45.0
     season_factor = 1.5 if today.month in [6, 7, 8, 9, 10] else 1.0
     default_lag = base * season_factor
 
     if history and len(history) > 0:
-        # Utiliser les données réelles, même si peu nombreuses
         lag_1 = history[-1] if len(history) >= 1 else default_lag
         lag_7 = history[-7] if len(history) >= 7 else (sum(history[-len(history):]) / len(history))
         lag_30 = history[0] if len(history) >= 1 else base
@@ -255,7 +318,6 @@ def predict_sales(request: PredictionRequest):
             "upper_bound": round(upper, 1)
         })
 
-        # Mise à jour récursive des lags
         lag_30 = lag_7
         lag_7 = lag_1
         lag_1 = pred
@@ -265,14 +327,14 @@ def predict_sales(request: PredictionRequest):
     return {
         "medicine_id": request.medicine_id,
         "predictions": predictions,
-        "model_version": "v2.0-personalized"
+        "model_version": "v2.0-personalized",
+        "database": "PostgreSQL"
     }
 
+# ==========================================
+# ANALYSE DE STOCK
+# ==========================================
 
-
-
-
-# ---------- ANALYSE DE STOCK ----------
 @app.post("/analyze/stock")
 def analyze_stock(request: StockAnalysisRequest):
     """Analyse le risque de rupture ou surstock"""
@@ -306,7 +368,10 @@ def analyze_stock(request: StockAnalysisRequest):
         "message": message
     }
 
-# ---------- RECOMMANDATION DE COMMANDE ----------
+# ==========================================
+# RECOMMANDATION DE COMMANDE
+# ==========================================
+
 @app.post("/recommend/order")
 def recommend_order(request: OrderRecommendationRequest):
     """Recommande la quantité optimale à commander"""
@@ -327,7 +392,10 @@ def recommend_order(request: OrderRecommendationRequest):
         "message": f"📦 Commander {round(order_quantity)} unités" if order_quantity > 0 else "✅ Stock suffisant"
     }
 
-# ---------- SCORE DE CRITICITÉ ----------
+# ==========================================
+# SCORE DE CRITICITÉ
+# ==========================================
+
 @app.get("/criticality")
 def get_criticality(medicine_id: str = "MED003"):
     """Retourne le score de criticité"""
@@ -338,19 +406,31 @@ def get_criticality(medicine_id: str = "MED003"):
     }
     score = scores.get(medicine_id, 50)
     
-    if score >= 85: level, color = "CRITIQUE", "red"
-    elif score >= 70: level, color = "ÉLEVÉ", "orange"
-    elif score >= 50: level, color = "MOYEN", "yellow"
-    else: level, color = "FAIBLE", "green"
+    if score >= 85:
+        level, color = "CRITIQUE", "red"
+    elif score >= 70:
+        level, color = "ÉLEVÉ", "orange"
+    elif score >= 50:
+        level, color = "MOYEN", "yellow"
+    else:
+        level, color = "FAIBLE", "green"
     
-    return {"medicine_id": medicine_id, "criticality_score": score, "level": level, "color": color}
+    return {
+        "medicine_id": medicine_id,
+        "criticality_score": score,
+        "level": level,
+        "color": color
+    }
 
-# ---------- ANALYSE SAISONNIÈRE ----------
+# ==========================================
+# ANALYSE SAISONNIÈRE
+# ==========================================
+
 @app.get("/seasonal-analysis")
 def seasonal_analysis():
     """Analyse saisonnière pour le Tchad"""
     today = date.today()
-    is_rainy = today.month in [6,7,8,9,10]
+    is_rainy = today.month in [6, 7, 8, 9, 10]
     
     return {
         "date": today.isoformat(),
@@ -362,9 +442,9 @@ def seasonal_analysis():
         "priority_categories": ["Antipaludéens", "Réhydratation", "Antibiotiques"] if is_rainy else ["Vaccins", "Respiratoire", "Antibiotiques"]
     }
 
-
-
-
+# ==========================================
+# ANALYSE SHAP
+# ==========================================
 
 @app.get("/shap-analysis")
 def shap_analysis(medicine_id: str):
@@ -376,10 +456,9 @@ def shap_analysis(medicine_id: str):
     if not history or len(history) < 5:
         return {"error": "Pas assez d'historique pour calculer SHAP."}
 
-    # Préparer les features basées sur le dernier jour de l'historique
     hist = history[-30:] if len(history) >= 30 else history
     if len(hist) < 30:
-        hist = [45.0] * (30 - len(hist)) + hist  # valeur par défaut
+        hist = [45.0] * (30 - len(hist)) + hist
 
     lag_1 = hist[-1]
     lag_7 = hist[-7]
@@ -391,7 +470,7 @@ def shap_analysis(medicine_id: str):
     dow = last_date.weekday()
     month = last_date.month
     is_weekend = 1 if dow >= 5 else 0
-    season = 1 if month in [6,7,8,9,10] else 0
+    season = 1 if month in [6, 7, 8, 9, 10] else 0
 
     features = {
         'day_of_week': dow,
@@ -423,9 +502,10 @@ def shap_analysis(medicine_id: str):
         "features": feature_importance
     }
 
+# ==========================================
+# CHATBOT
+# ==========================================
 
-
-# ---------- CHATBOT ASSISTANT ----------
 @app.post("/chat")
 def chat(request: ChatRequest):
     """Assistant IA pour la pharmacie"""
@@ -444,8 +524,10 @@ def chat(request: ChatRequest):
         if key in msg:
             return {"reply": reponse, "timestamp": date.today().isoformat()}
     
-    return {"reply": "Je peux vous aider sur : prévisions, ruptures, commandes, criticité, saisons. Que voulez-vous savoir ?", "timestamp": date.today().isoformat()}
+    return {
+        "reply": "Je peux vous aider sur : prévisions, ruptures, commandes, criticité, saisons. Que voulez-vous savoir ?",
+        "timestamp": date.today().isoformat()
+    }
 
 print("\n✅ API DENG PHARMA prête !")
 print("📖 Documentation : http://127.0.0.1:8001/docs")
-
