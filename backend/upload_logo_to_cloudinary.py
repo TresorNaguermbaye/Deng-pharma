@@ -29,7 +29,7 @@ print(f"👤 Superutilisateur: {user.username}")
 profile, created = UserProfile.objects.get_or_create(user=user)
 
 # 4. URL d'un logo par défaut (tu peux changer)
-LOGO_URL = "https://i.imgur.com/5X7u8KQ.png"  # Logo par défaut DENG PHARMA
+LOGO_URL = "https://res.cloudinary.com/dyx3vcyzp/image/upload/v1788107048/logo.png"  # Logo par défaut DENG PHARMA
 # Si tu as une autre URL, mets-la ici
 
 print(f"📥 Téléchargement du logo depuis: {LOGO_URL}")
