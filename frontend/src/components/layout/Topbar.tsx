@@ -55,7 +55,7 @@ export function Topbar({ onMenuClick, onRefresh }: TopbarProps) {
       {/* Partie gauche : logo seul (sans hamburger) */}
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-3">
-          <Logo className="w-17 h-17 md:w-30 md:h-30 rounded-xl object-cover" />
+          <Logo className="w-15 h-15 md:w-30 md:h-30 rounded-xl object-cover" />
         </div>
       </div>
 
