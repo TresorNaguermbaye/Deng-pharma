@@ -8,6 +8,12 @@ from pathlib import Path
 from decouple import config
 import dj_database_url
 
+
+import cloudinary
+import cloudinary.uploader
+import cloudinary.api
+
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -47,6 +53,8 @@ INSTALLED_APPS = [
     'apps.notifications',
     'apps.audit',
     'apps.ai_integration',
+
+    'cloudinary_storage',
 ]
 
 AUTH_USER_MODEL = 'accounts.User'
@@ -180,3 +188,13 @@ LOGGING = {
     },
 }
 
+# ========== CLOUDINARY CONFIGURATION ==========
+
+cloudinary.config(
+    cloud_name=os.getenv('CLOUDINARY_CLOUD_NAME'),
+    api_key=os.getenv('CLOUDINARY_API_KEY'),
+    api_secret=os.getenv('CLOUDINARY_API_SECRET'),
+)
+
+# Utiliser Cloudinary pour les fichiers médias
+DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
