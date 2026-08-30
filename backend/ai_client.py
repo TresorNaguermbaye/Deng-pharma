@@ -3,6 +3,8 @@
 Client HTTP pour le service IA DENG PHARMA
 Permet au backend Django de communiquer avec le microservice FastAPI
 """
+import os
+
 import requests
 from typing import Dict, List, Optional
 import logging
@@ -14,10 +16,12 @@ class DengPharmaAIClient:
     Client pour interagir avec le service IA de DENG PHARMA
     """
     
-    def __init__(self, base_url: str = "http://127.0.0.1:8001"):
-        self.base_url = base_url
+    def __init__(self, base_url: str = None):
+        # Utiliser la variable d'environnement ou la valeur par défaut
+        self.base_url = base_url or os.getenv('AI_SERVICE_URL', 'http://127.0.0.1:8001')
         self.timeout = 10  # secondes
-    
+        logger.info(f"🤖 Service IA configuré à : {self.base_url}")
+        
     def health_check(self) -> Dict:
         """Vérifie que le service IA est opérationnel"""
         try:
