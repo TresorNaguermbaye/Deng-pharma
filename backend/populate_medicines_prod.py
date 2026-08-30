@@ -14,7 +14,11 @@ from django.db import transaction
 
 print("🚀 Peuplement des lots de stock pour tous les médicaments...")
 
-
+User = get_user_model()
+user = User.objects.first()
+if not user:
+    user = User.objects.create_superuser('system', 'system@dengpharma.com', 'system123')
+    print("✅ Superutilisateur système créé")
 
 @transaction.atomic
 def populate_stocks():
