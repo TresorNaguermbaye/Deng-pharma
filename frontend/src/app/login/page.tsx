@@ -27,7 +27,7 @@ export default function LoginPage() {
 
   // Récupérer le logo de la pharmacie depuis l'API publique
   useEffect(() => {
-    fetch('/api/auth/pharmacy-logo/')
+    fetch('https://res.cloudinary.com/dyx3vcyzp/image/upload/v1788107048/logo.png')
       .then((res) => res.json())
       .then((data) => setLogoUrl(data.logo_url))
       .catch(() => setLogoUrl(null));
