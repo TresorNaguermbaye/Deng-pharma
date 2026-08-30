@@ -113,7 +113,6 @@ def get_commercial_name_from_uuid(identifier: str) -> Optional[str]:
 def get_medicine_history(identifier: str, medicine_name: Optional[str] = None, days: int = 30) -> Optional[List[float]]:
     """
     Récupère l'historique des ventes réelles depuis PostgreSQL.
-    Retourne une liste des quantités vendues par jour (des plus anciennes aux plus récentes).
     """
     try:
         conn = get_db_connection()
@@ -134,29 +133,60 @@ def get_medicine_history(identifier: str, medicine_name: Optional[str] = None, d
                 conn.close()
                 return None
         
-        # Requête pour récupérer les ventes réelles
+        # ✅ REQUÊTE CORRIGÉE
+        # 1. Utiliser l'ID du médicament directement pour éviter les problèmes de nom
+        # 2. Récupérer d'abord l'ID du médicament
+        
+        # Récupérer l'ID du médicament
+        med_id = None
+        if identifier:
+            clean_id = identifier.replace('-', '')
+            cursor.execute("""
+                SELECT id FROM medicines_medicine 
+                WHERE REPLACE(id::text, '-', '') = %s OR id::text = %s
+            """, (clean_id, identifier))
+            row = cursor.fetchone()
+            if row:
+                med_id = row[0]
+        
+        if not med_id:
+            # Si pas trouvé par ID, chercher par nom
+            cursor.execute("""
+                SELECT id FROM medicines_medicine 
+                WHERE commercial_name ILIKE %s
+            """, (f'%{search_name}%',))
+            row = cursor.fetchone()
+            if row:
+                med_id = row[0]
+        
+        if not med_id:
+            logger.warning(f"⚠️ Aucun médicament trouvé pour {search_name}")
+            cursor.close()
+            conn.close()
+            return None
+        
+        # ✅ Récupérer l'historique des ventes pour ce médicament spécifique
         query = """
             SELECT 
                 DATE(s.created_at) AS date,
                 COALESCE(SUM(si.quantity), 0) AS total_quantity
             FROM sales_saleitem si
             INNER JOIN sales_sale s ON si.sale_id = s.id
-            INNER JOIN medicines_medicine m ON si.medicine_id = m.id
-            WHERE m.commercial_name ILIKE %s
+            WHERE si.medicine_id = %s
               AND s.created_at >= NOW() - INTERVAL '%s days'
             GROUP BY DATE(s.created_at)
             ORDER BY date ASC
         """
         
-        logger.info(f"🔍 Recherche de l'historique pour: {search_name}")
-        cursor.execute(query, (f'%{search_name}%', days))
+        logger.info(f"🔍 Recherche de l'historique pour médicament ID: {med_id}")
+        cursor.execute(query, (med_id, days))
         rows = cursor.fetchall()
         
         cursor.close()
         conn.close()
         
         if not rows:
-            logger.warning(f"⚠️ Aucune vente trouvée pour {search_name} sur les {days} derniers jours")
+            logger.warning(f"⚠️ Aucune vente trouvée pour le médicament {search_name} (ID: {med_id})")
             return None
         
         # Construire la liste des ventes
@@ -165,8 +195,6 @@ def get_medicine_history(identifier: str, medicine_name: Optional[str] = None, d
             result.append(float(row[1]) if row[1] else 0.0)
         
         logger.info(f"✅ {len(result)} jours d'historique récupérés pour {search_name}")
-        logger.info(f"📊 Ventes: min={min(result):.1f}, max={max(result):.1f}, moyenne={sum(result)/len(result):.1f}")
-        
         return result
         
     except Exception as e:
