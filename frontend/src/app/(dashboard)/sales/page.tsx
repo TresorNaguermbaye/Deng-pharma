@@ -60,16 +60,22 @@ export default function SalesPage() {
   const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
   const total = Math.max(0, subtotal - discount);
 
-  const downloadInvoice = async (saleId: number) => {
-    try {
-      const token = api.getToken();
-      const response = await fetch(`http://127.0.0.1:8000/api/sales/sales/${saleId}/invoice/`, { headers: { 'Authorization': `Bearer ${token}` } });
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a'); a.href = url; a.download = `facture_${saleId}.pdf`;
-      document.body.appendChild(a); a.click(); document.body.removeChild(a); window.URL.revokeObjectURL(url);
-    } catch (err) { console.error(err); }
-  };
+const downloadInvoice = async (saleId: number) => {
+  try {
+    const blob = await api.downloadInvoice(saleId);
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `facture_${saleId}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+  } catch (err) {
+    console.error(err);
+    alert("Erreur lors du téléchargement");
+  }
+};
 
   const handleSubmitSale = async () => {
     if (cart.length === 0) return alert("Ajoutez au moins un médicament");

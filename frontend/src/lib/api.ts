@@ -147,6 +147,33 @@ class ApiClient {
     return this.request('/sales/sales/', { method: 'POST', body: JSON.stringify(data) });
   }
 
+
+// ========== Factures ==========
+async downloadInvoice(saleId: number): Promise<Blob> {
+  const token = this.getToken();
+  if (!token) throw new Error('Non authentifié');
+
+  const url = `${DJANGO_API}/sales/sales/${saleId}/invoice/`;
+
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (response.status === 401) {
+    window.location.href = "/login";
+    throw new Error("Session expirée");
+  }
+
+  if (!response.ok) {
+    throw new Error("Erreur lors du téléchargement");
+  }
+
+  return response.blob();
+}
+
+
+
+
   // ========== Analytics / Dashboard ==========
   async getDashboardKPIs() {
     return this.request('/analytics/dashboard/');
