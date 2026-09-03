@@ -6,14 +6,14 @@ const urlsToCache = [
   "/icons/icon-512x512.png"
 ];
 
-// Installation : mise en cache des ressources de base
+// Installation
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => cache.addAll(urlsToCache))
   );
 });
 
-// Activation : suppression des anciens caches
+// Activation
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((cacheNames) =>
@@ -26,16 +26,29 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-// Fetch : servir depuis le cache si possible, sinon réseau
+// 🔥 Fetch : ignorer les requêtes API et les images externes
 self.addEventListener("fetch", (event) => {
+  const url = new URL(event.request.url);
+
+  // Ignorer les requêtes API (backend)
+  if (url.pathname.startsWith("/api/")) {
+    event.respondWith(fetch(event.request));
+    return;
+  }
+
+  // Ignorer les images externes (Cloudinary, etc.)
+  if (url.hostname.includes("cloudinary") || url.hostname.includes("imgur")) {
+    event.respondWith(fetch(event.request));
+    return;
+  }
+
+  // Pour les autres ressources, servir du cache ou du réseau
   event.respondWith(
     caches.match(event.request).then((response) => response || fetch(event.request))
   );
 });
 
-// ========== Notifications push ==========
-
-// Réception d'une notification push
+// Notifications push
 self.addEventListener("push", (event) => {
   const data = event.data ? event.data.json() : {};
   const options = {
@@ -48,7 +61,7 @@ self.addEventListener("push", (event) => {
   );
 });
 
-// Clic sur une notification
+// Clic sur notification
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   event.waitUntil(clients.openWindow("/"));
