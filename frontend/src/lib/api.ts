@@ -1,4 +1,6 @@
-const DJANGO_API = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000/api';
+
+const DJANGO_API = process.env.NEXT_PUBLIC_API_URL || 'https://deng-pharma-backend.onrender.com/api';
+
 
 class ApiClient {
   private token: string | null = null;
