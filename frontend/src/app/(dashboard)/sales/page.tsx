@@ -10,15 +10,31 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
+  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle
+} from "@/components/ui/dialog";
+import {
   Search, Plus, Minus, Trash2, ShoppingCart, Receipt, Download,
   Menu, X, LayoutDashboard, Pill, Package, FileBarChart, BarChart3,
-  Brain, Bell, Users, LogOut, TrendingUp
+  Brain, Bell, Users, LogOut, Package as PackageIcon
 } from "lucide-react";
 import { useDashboard } from "@/context/DashboardContext";
 import { Topbar } from "@/components/layout/Topbar";
 import { Sidebar } from "@/components/layout/Sidebar";
 
-interface CartItem { id: string; name: string; price: number; quantity: number; }
+interface CartItem {
+  id: string;
+  name: string;
+  price: number;
+  quantity: number;
+}
+
+interface FEFODetail {
+  medicine_name: string;
+  quantity: number;
+  lot_batch: string;
+  expiry_date: string;
+  remaining_stock: number;
+}
 
 export default function SalesPage() {
   const { triggerRefresh } = useDashboard();
@@ -32,70 +48,113 @@ export default function SalesPage() {
   const [submitting, setSubmitting] = useState(false);
   const [lastSaleId, setLastSaleId] = useState<number | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [showFEFODialog, setShowFEFODialog] = useState(false);
+  const [fefoDetails, setFefoDetails] = useState<FEFODetail[]>([]);
 
   const handleSearch = async () => {
     if (!search.trim()) return;
     try {
       const data = await api.getMedicines({ search });
       setMedicines(data.results || []);
-    } catch (err) { console.error(err); }
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   const addToCart = (med: any) => {
     setCart(prev => {
       const existing = prev.find(item => item.id === med.id);
-      if (existing) return prev.map(item => item.id === med.id ? { ...item, quantity: item.quantity + 1 } : item);
+      if (existing) {
+        return prev.map(item =>
+          item.id === med.id ? { ...item, quantity: item.quantity + 1 } : item
+        );
+      }
       return [...prev, { id: med.id, name: med.commercial_name, price: med.selling_price, quantity: 1 }];
     });
   };
 
-  const removeFromCart = (id: string) => setCart(prev => prev.filter(item => item.id !== id));
+  const removeFromCart = (id: string) => {
+    setCart(prev => prev.filter(item => item.id !== id));
+  };
+
   const updateQuantity = (id: string, delta: number) => {
-    setCart(prev => prev.map(item => {
-      if (item.id === id) { const newQty = item.quantity + delta; return newQty > 0 ? { ...item, quantity: newQty } : item; }
-      return item;
-    }).filter(item => item.quantity > 0));
+    setCart(prev =>
+      prev
+        .map(item => {
+          if (item.id === id) {
+            const newQty = item.quantity + delta;
+            return newQty > 0 ? { ...item, quantity: newQty } : item;
+          }
+          return item;
+        })
+        .filter(item => item.quantity > 0)
+    );
   };
 
   const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
   const total = Math.max(0, subtotal - discount);
 
-const downloadInvoice = async (saleId: number) => {
-  try {
-    const blob = await api.downloadInvoice(saleId);
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `facture_${saleId}.pdf`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
-  } catch (err) {
-    console.error(err);
-    alert("Erreur lors du téléchargement");
-  }
-};
+  const downloadInvoice = async (saleId: number) => {
+    try {
+      const blob = await api.downloadInvoice(saleId);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `facture_${saleId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error(err);
+      alert("Erreur lors du téléchargement");
+    }
+  };
 
   const handleSubmitSale = async () => {
-    if (cart.length === 0) return alert("Ajoutez au moins un médicament");
+    if (cart.length === 0) {
+      alert("Ajoutez au moins un médicament");
+      return;
+    }
+
     setSubmitting(true);
     try {
       const result = await api.createSale({
         customer_name: customerName || null,
-        discount, payment_method: paymentMethod,
-        items: cart.map(item => ({ medicine: item.id, quantity: item.quantity, unit_price: item.price }))
+        discount,
+        payment_method: paymentMethod,
+        items: cart.map(item => ({
+          medicine: item.id,
+          quantity: item.quantity,
+          unit_price: item.price
+        }))
       });
+
       setLastSaleId(result.id);
       triggerRefresh();
+
+      // ✅ Afficher les détails FEFO si disponibles
+      if (result.lot_details && result.lot_details.length > 0) {
+        setFefoDetails(result.lot_details);
+        setShowFEFODialog(true);
+      }
+
+      // Vider le panier
       setCart([]);
       setCustomerName("");
       setDiscount(0);
       setMedicines([]);
       setSearch("");
+
+      // Télécharger la facture après 500ms
       setTimeout(() => downloadInvoice(result.id), 500);
-    } catch (err) { console.error(err); alert("Erreur"); }
-    finally { setSubmitting(false); }
+
+    } catch (err) {
+      console.error(err);
+      alert("Erreur lors de l'enregistrement de la vente");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleLogout = () => {
@@ -103,7 +162,6 @@ const downloadInvoice = async (saleId: number) => {
     router.push("/login");
   };
 
-  // Navigation locale pour la sidebar mobile
   const navItems = [
     { label: "Dashboard", href: "/", icon: LayoutDashboard },
     { label: "Médicaments", href: "/medicines", icon: Pill },
@@ -117,17 +175,20 @@ const downloadInvoice = async (saleId: number) => {
     { label: "Utilisateurs", href: "/admin/users", icon: Users },
   ];
 
-  const formatFCFA = (v: number) => new Intl.NumberFormat('fr-FR').format(v) + ' FCFA';
+  const formatFCFA = (v: number) =>
+    new Intl.NumberFormat("fr-FR").format(v) + " FCFA";
+
+  const formatDate = (dateStr: string) => {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString("fr-FR");
+  };
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900">
-      {/* Topbar */}
       <Topbar onMenuClick={() => setMobileMenuOpen(true)} />
-
-      {/* Sidebar desktop */}
       <Sidebar />
 
-      {/* Sidebar mobile */}
+      {/* Mobile menu */}
       {mobileMenuOpen && (
         <div className="fixed inset-0 z-50 lg:hidden">
           <div className="fixed inset-0 bg-black/50" onClick={() => setMobileMenuOpen(false)} />
@@ -145,9 +206,14 @@ const downloadInvoice = async (saleId: number) => {
               {navItems.map((item) => (
                 <button
                   key={item.href}
-                  onClick={() => { router.push(item.href); setMobileMenuOpen(false); }}
+                  onClick={() => {
+                    router.push(item.href);
+                    setMobileMenuOpen(false);
+                  }}
                   className={`flex items-center gap-3 w-full px-4 py-3 rounded-lg text-left ${
-                    item.href === "/sales" ? "text-white bg-white/10" : "text-gray-300 hover:bg-white/5 hover:text-white"
+                    item.href === "/sales"
+                      ? "text-white bg-white/10"
+                      : "text-gray-300 hover:bg-white/5 hover:text-white"
                   }`}
                 >
                   <item.icon className="w-5 h-5" />
@@ -166,7 +232,9 @@ const downloadInvoice = async (saleId: number) => {
       <main className="pt-20 lg:pl-64 p-4 md:p-8 space-y-6">
         <div>
           <h1 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">Ventes</h1>
-          <p className="text-slate-500 dark:text-slate-400 mt-1">Gérez vos ventes et générez des factures</p>
+          <p className="text-slate-500 dark:text-slate-400 mt-1">
+            Gérez vos ventes et générez des factures
+          </p>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -179,32 +247,73 @@ const downloadInvoice = async (saleId: number) => {
               </CardHeader>
               <CardContent>
                 {cart.length === 0 ? (
-                  <p className="text-center text-slate-400 dark:text-slate-500 py-8">Panier vide. Recherchez un médicament.</p>
+                  <p className="text-center text-slate-400 dark:text-slate-500 py-8">
+                    Panier vide. Recherchez un médicament.
+                  </p>
                 ) : (
                   <Table className="w-full table-fixed">
                     <TableHeader>
                       <TableRow className="border-slate-200 dark:border-slate-700">
-                        <TableHead className="w-2/5 text-[10px] sm:text-sm text-slate-500 dark:text-slate-400 p-1 sm:p-2">Médicament</TableHead>
-                        <TableHead className="w-1/5 text-[10px] sm:text-sm text-slate-500 dark:text-slate-400 p-1 sm:p-2">Prix</TableHead>
-                        <TableHead className="w-1/5 text-[10px] sm:text-sm text-slate-500 dark:text-slate-400 p-1 sm:p-2">Qté</TableHead>
-                        <TableHead className="w-1/5 text-[10px] sm:text-sm text-slate-500 dark:text-slate-400 p-1 sm:p-2">Total</TableHead>
+                        <TableHead className="w-2/5 text-[10px] sm:text-sm text-slate-500 dark:text-slate-400 p-1 sm:p-2">
+                          Médicament
+                        </TableHead>
+                        <TableHead className="w-1/5 text-[10px] sm:text-sm text-slate-500 dark:text-slate-400 p-1 sm:p-2">
+                          Prix
+                        </TableHead>
+                        <TableHead className="w-1/5 text-[10px] sm:text-sm text-slate-500 dark:text-slate-400 p-1 sm:p-2">
+                          Qté
+                        </TableHead>
+                        <TableHead className="w-1/5 text-[10px] sm:text-sm text-slate-500 dark:text-slate-400 p-1 sm:p-2">
+                          Total
+                        </TableHead>
                         <TableHead className="w-8 p-1 sm:p-2"></TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {cart.map(item => (
+                      {cart.map((item) => (
                         <TableRow key={item.id} className="border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700">
-                          <TableCell className="font-medium text-slate-900 dark:text-white truncate text-[10px] sm:text-sm p-1 sm:p-2">{item.name}</TableCell>
-                          <TableCell className="text-slate-500 dark:text-slate-400 text-[10px] sm:text-sm p-1 sm:p-2">{formatFCFA(item.price)}</TableCell>
+                          <TableCell className="font-medium text-slate-900 dark:text-white truncate text-[10px] sm:text-sm p-1 sm:p-2">
+                            {item.name}
+                          </TableCell>
+                          <TableCell className="text-slate-500 dark:text-slate-400 text-[10px] sm:text-sm p-1 sm:p-2">
+                            {formatFCFA(item.price)}
+                          </TableCell>
                           <TableCell className="p-1 sm:p-2">
                             <div className="flex items-center gap-1 sm:gap-2">
-                              <Button variant="outline" size="sm" onClick={() => updateQuantity(item.id, -1)} className="p-1 sm:p-2 dark:border-slate-600 dark:text-slate-300"><Minus className="w-3 h-3" /></Button>
-                              <span className="w-6 text-center text-slate-900 dark:text-white text-[10px] sm:text-sm">{item.quantity}</span>
-                              <Button variant="outline" size="sm" onClick={() => updateQuantity(item.id, 1)} className="p-1 sm:p-2 dark:border-slate-600 dark:text-slate-300"><Plus className="w-3 h-3" /></Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => updateQuantity(item.id, -1)}
+                                className="p-1 sm:p-2 dark:border-slate-600 dark:text-slate-300"
+                              >
+                                <Minus className="w-3 h-3" />
+                              </Button>
+                              <span className="w-6 text-center text-slate-900 dark:text-white text-[10px] sm:text-sm">
+                                {item.quantity}
+                              </span>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => updateQuantity(item.id, 1)}
+                                className="p-1 sm:p-2 dark:border-slate-600 dark:text-slate-300"
+                              >
+                                <Plus className="w-3 h-3" />
+                              </Button>
                             </div>
                           </TableCell>
-                          <TableCell className="font-semibold text-slate-900 dark:text-white text-[10px] sm:text-sm p-1 sm:p-2">{formatFCFA(item.price * item.quantity)}</TableCell>
-                          <TableCell className="p-1 sm:p-2"><Button variant="ghost" size="sm" className="text-red-500 p-1" onClick={() => removeFromCart(item.id)}><Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" /></Button></TableCell>
+                          <TableCell className="font-semibold text-slate-900 dark:text-white text-[10px] sm:text-sm p-1 sm:p-2">
+                            {formatFCFA(item.price * item.quantity)}
+                          </TableCell>
+                          <TableCell className="p-1 sm:p-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-red-500 p-1"
+                              onClick={() => removeFromCart(item.id)}
+                            >
+                              <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                            </Button>
+                          </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
@@ -212,10 +321,17 @@ const downloadInvoice = async (saleId: number) => {
                 )}
                 {cart.length > 0 && (
                   <div className="border-t border-slate-200 dark:border-slate-700 pt-4 mt-4 space-y-2 text-right">
-                    <p className="text-slate-500 dark:text-slate-400 text-sm">Sous-total : {formatFCFA(subtotal)}</p>
+                    <p className="text-slate-500 dark:text-slate-400 text-sm">
+                      Sous-total : {formatFCFA(subtotal)}
+                    </p>
                     <div className="flex items-center justify-end gap-2">
                       <Label className="text-slate-500 dark:text-slate-400 text-sm">Remise :</Label>
-                      <Input type="number" value={discount} onChange={e => setDiscount(Number(e.target.value))} className="w-24 sm:w-32 dark:bg-slate-700 dark:text-white dark:border-slate-600" />
+                      <Input
+                        type="number"
+                        value={discount}
+                        onChange={(e) => setDiscount(Number(e.target.value))}
+                        className="w-24 sm:w-32 dark:bg-slate-700 dark:text-white dark:border-slate-600"
+                      />
                       <span className="text-slate-500 dark:text-slate-400 text-sm">FCFA</span>
                     </div>
                     <p className="text-xl font-bold text-[#0ABAB5]">Total : {formatFCFA(total)}</p>
@@ -233,7 +349,12 @@ const downloadInvoice = async (saleId: number) => {
               <CardContent className="space-y-3">
                 <div className="space-y-2">
                   <Label className="text-slate-500 dark:text-slate-400">Nom du client</Label>
-                  <Input value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder="Client comptoir" className="dark:bg-slate-700 dark:text-white dark:border-slate-600" />
+                  <Input
+                    value={customerName}
+                    onChange={(e) => setCustomerName(e.target.value)}
+                    placeholder="Client comptoir"
+                    className="dark:bg-slate-700 dark:text-white dark:border-slate-600"
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label className="text-slate-500 dark:text-slate-400">Mode de paiement</Label>
@@ -249,12 +370,22 @@ const downloadInvoice = async (saleId: number) => {
                     </SelectContent>
                   </Select>
                 </div>
-                <Button className="w-full bg-gradient-to-r from-[#0ABAB5] to-blue-600 text-white" onClick={handleSubmitSale} disabled={submitting || cart.length === 0}>
-                  <Receipt className="w-4 h-4 mr-2" />{submitting ? "Enregistrement..." : "Valider la vente"}
+                <Button
+                  className="w-full bg-gradient-to-r from-[#0ABAB5] to-blue-600 text-white"
+                  onClick={handleSubmitSale}
+                  disabled={submitting || cart.length === 0}
+                >
+                  <Receipt className="w-4 h-4 mr-2" />
+                  {submitting ? "Enregistrement..." : "Valider la vente"}
                 </Button>
                 {lastSaleId && (
-                  <Button variant="outline" className="w-full mt-2 text-[#0ABAB5] border-[#0ABAB5] dark:bg-transparent" onClick={() => downloadInvoice(lastSaleId)}>
-                    <Download className="w-4 h-4 mr-2" />Télécharger la facture
+                  <Button
+                    variant="outline"
+                    className="w-full mt-2 text-[#0ABAB5] border-[#0ABAB5] dark:bg-transparent"
+                    onClick={() => downloadInvoice(lastSaleId)}
+                  >
+                    <Download className="w-4 h-4 mr-2" />
+                    Télécharger la facture
                   </Button>
                 )}
               </CardContent>
@@ -268,24 +399,30 @@ const downloadInvoice = async (saleId: number) => {
                 <div className="flex gap-2">
                   <Input
                     value={search}
-                    onChange={e => setSearch(e.target.value)}
+                    onChange={(e) => setSearch(e.target.value)}
                     placeholder="Nom ou DCI..."
-                    onKeyDown={e => e.key === 'Enter' && handleSearch()}
+                    onKeyDown={(e) => e.key === "Enter" && handleSearch()}
                     className="dark:bg-slate-700 dark:text-white dark:border-slate-600"
                   />
-                  <Button onClick={handleSearch}><Search className="w-4 h-4" /></Button>
+                  <Button onClick={handleSearch}>
+                    <Search className="w-4 h-4" />
+                  </Button>
                 </div>
                 {medicines.length > 0 && (
                   <div className="space-y-2 max-h-60 overflow-y-auto">
-                    {medicines.map(med => (
+                    {medicines.map((med) => (
                       <div
                         key={med.id}
                         className="flex items-center justify-between p-2 bg-slate-50 dark:bg-slate-700 rounded-lg cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-600"
                         onClick={() => addToCart(med)}
                       >
                         <div>
-                          <p className="font-medium text-sm text-slate-900 dark:text-white">{med.commercial_name}</p>
-                          <p className="text-xs text-slate-500 dark:text-slate-400">{formatFCFA(med.selling_price)}</p>
+                          <p className="font-medium text-sm text-slate-900 dark:text-white">
+                            {med.commercial_name}
+                          </p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">
+                            {formatFCFA(med.selling_price)}
+                          </p>
                         </div>
                         <Plus className="w-4 h-4 text-[#0ABAB5]" />
                       </div>
@@ -297,6 +434,65 @@ const downloadInvoice = async (saleId: number) => {
           </div>
         </div>
       </main>
+
+      {/* ✅ Dialog FEFO pour afficher les lots utilisés */}
+      <Dialog open={showFEFODialog} onOpenChange={setShowFEFODialog}>
+        <DialogContent className="max-w-2xl bg-white dark:bg-slate-800 border dark:border-slate-700">
+          <DialogHeader>
+            <DialogTitle className="text-slate-900 dark:text-white flex items-center gap-2">
+              <PackageIcon className="w-5 h-5 text-[#0ABAB5]" />
+              Détails FEFO - Lots utilisés
+            </DialogTitle>
+            <DialogDescription className="text-slate-500 dark:text-slate-400">
+              Les lots suivants ont été utilisés selon la règle FEFO (First Expired, First Out).
+            </DialogDescription>
+          </DialogHeader>
+
+          <Table>
+            <TableHeader>
+              <TableRow className="border-slate-200 dark:border-slate-700">
+                <TableHead className="text-slate-500 dark:text-slate-400">Médicament</TableHead>
+                <TableHead className="text-slate-500 dark:text-slate-400 text-right">Quantité</TableHead>
+                <TableHead className="text-slate-500 dark:text-slate-400">Lot</TableHead>
+                <TableHead className="text-slate-500 dark:text-slate-400">Expiration</TableHead>
+                <TableHead className="text-slate-500 dark:text-slate-400 text-right">Restant</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {fefoDetails.map((detail, index) => (
+                <TableRow key={index} className="border-slate-200 dark:border-slate-700">
+                  <TableCell className="font-medium text-slate-900 dark:text-white">
+                    {detail.medicine_name}
+                  </TableCell>
+                  <TableCell className="text-right text-slate-700 dark:text-slate-300 font-semibold">
+                    {detail.quantity}
+                  </TableCell>
+                  <TableCell className="text-slate-600 dark:text-slate-400">
+                    <span className="px-2 py-1 bg-slate-100 dark:bg-slate-700 rounded text-xs">
+                      {detail.lot_batch}
+                    </span>
+                  </TableCell>
+                  <TableCell className="text-slate-600 dark:text-slate-400">
+                    {formatDate(detail.expiry_date)}
+                  </TableCell>
+                  <TableCell className="text-right text-slate-600 dark:text-slate-400">
+                    {detail.remaining_stock}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+
+          <div className="flex justify-end mt-4">
+            <Button
+              className="bg-[#0ABAB5] hover:bg-[#09a09c] text-white"
+              onClick={() => setShowFEFODialog(false)}
+            >
+              OK
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
