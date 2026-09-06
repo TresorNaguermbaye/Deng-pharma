@@ -332,6 +332,34 @@ Instructions :
 5. Pour les chiffres, utilise le format FCFA.
 6. Sois concis (max 3-4 phrases)."""
 
+# ==========================================
+# CONFIGURATION GROQ (HTTP direct)
+# ==========================================
+
+GROQ_API_KEY = os.getenv('GROQ_API_KEY')
+GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
+
+# ✅ Modèles Groq actifs (septembre 2026)
+GROQ_MODEL = "llama3-8b-8192"  # Rapide et efficace pour le chat
+
+SYSTEM_PROMPT = """Tu es l'assistant IA de DENG PHARMA, une pharmacie intelligente au Tchad.
+
+Tu as accès aux données suivantes (en temps réel via des fonctions) :
+- Stock des médicaments
+- Ruptures de stock
+- Prévisions de ventes (modèle XGBoost)
+- Chiffre d'affaires
+- Expirations
+- Recommandations de commandes
+
+Instructions :
+1. Réponds en français, de manière professionnelle et concise.
+2. Si l'utilisateur demande une information spécifique (stock, rupture, prévision), utilise les données disponibles.
+3. Si tu ne connais pas la réponse, dis-le honnêtement et propose de l'aide.
+4. Sois amical mais professionnel.
+5. Pour les chiffres, utilise le format FCFA.
+6. Sois concis (max 3-4 phrases)."""
+
 def call_groq(prompt: str) -> Optional[str]:
     """Appelle l'API Groq via HTTP direct"""
     if not GROQ_API_KEY:
@@ -345,7 +373,7 @@ def call_groq(prompt: str) -> Optional[str]:
         }
         
         payload = {
-            "model": "mixtral-8x7b-32768",
+            "model": GROQ_MODEL,  # ✅ Utilise la variable
             "messages": [
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": prompt}
@@ -355,11 +383,10 @@ def call_groq(prompt: str) -> Optional[str]:
             "top_p": 0.9
         }
         
-        print(f"🔍 Envoi de la requête à Groq...")
+        print(f"🔍 Envoi de la requête à Groq avec modèle: {GROQ_MODEL}...")
         response = requests.post(GROQ_API_URL, json=payload, headers=headers, timeout=30)
         
         print(f"📡 Réponse Groq: {response.status_code}")
-        print(f"📄 Corps de la réponse: {response.text[:500]}")  # Affiche le début
         
         if response.status_code == 200:
             data = response.json()
@@ -376,7 +403,6 @@ def call_groq(prompt: str) -> Optional[str]:
     except Exception as e:
         print(f"❌ Erreur Groq: {e}")
         return None
-    
 # ==========================================
 # CHARGEMENT DU MODÈLE
 # ==========================================
