@@ -306,15 +306,20 @@ def detect_intent(msg: str, entities: Dict) -> str:
         return "aide"
     return "fallback"
 
+
 # ==========================================
-# CONFIGURATION ORCAROUTER (Qwen gratuit)
+# CONFIGURATION HUGGING FACE INFERENCE API
 # ==========================================
 
-ORCA_API_KEY = os.getenv('ORCA_API_KEY')
-ORCA_API_URL = "https://api.orcarouter.com/v1/chat/completions"
+HF_TOKEN = os.getenv('HF_TOKEN')
 
-# Modèle Qwen gratuit
-QWEN_MODEL = "qwen/qwen3.8-27b-free"
+# Modèles gratuits disponibles sur Hugging Face :
+# - mistralai/Mistral-7B-Instruct-v0.3 (7B, bon pour le chat)
+# - meta-llama/Llama-3.2-3B-Instruct (3B, rapide)
+# - Qwen/Qwen2.5-7B-Instruct (7B, performant)
+# - google/gemma-2-9b-it (9B, bon pour les tâches générales)
+HF_MODEL = "mistralai/Mistral-7B-Instruct-v0.3"  # Recommandé
+HF_API_URL = f"https://api-inference.huggingface.co/models/{HF_MODEL}"
 
 SYSTEM_PROMPT = """Tu es l'assistant IA de DENG PHARMA, une pharmacie intelligente au Tchad.
 
@@ -326,58 +331,59 @@ Instructions :
 5. Pour les chiffres, utilise le format FCFA.
 6. Sois concis (max 3-4 phrases)."""
 
-def call_qwen(prompt: str) -> Optional[str]:
-    """Appelle l'API Qwen via OrcaRouter"""
-    if not ORCA_API_KEY:
-        print("❌ ORCA_API_KEY non définie")
+def call_huggingface(prompt: str) -> Optional[str]:
+    """Appelle l'API Hugging Face Inference (serverless)"""
+    if not HF_TOKEN:
+        print("❌ HF_TOKEN non défini")
         return None
     
     try:
         headers = {
-            "Authorization": f"Bearer {ORCA_API_KEY}",
+            "Authorization": f"Bearer {HF_TOKEN}",
             "Content-Type": "application/json"
         }
         
+        # Format pour les modèles de chat
         payload = {
-            "model": QWEN_MODEL,
-            "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": prompt}
-            ],
-            "temperature": 0.7,
-            "max_tokens": 500,
-            "top_p": 0.9
+            "inputs": f"{SYSTEM_PROMPT}\n\nUtilisateur: {prompt}\nAssistant:",
+            "parameters": {
+                "max_new_tokens": 500,
+                "temperature": 0.7,
+                "top_p": 0.9,
+                "return_full_text": False
+            }
         }
         
-        print(f"🔍 Envoi de la requête à Qwen via OrcaRouter...")
-        response = requests.post(ORCA_API_URL, json=payload, headers=headers, timeout=60)
+        print(f"🔍 Envoi à Hugging Face (modèle: {HF_MODEL})...")
+        response = requests.post(HF_API_URL, json=payload, headers=headers, timeout=60)
         
-        print(f"📡 Réponse OrcaRouter: {response.status_code}")
+        print(f"📡 Réponse HF: {response.status_code}")
         
         if response.status_code == 200:
             data = response.json()
-            content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-            if content:
-                return content
-            else:
-                print("❌ Réponse vide de Qwen")
-                return None
-        elif response.status_code == 429:
-            print("⚠️ Rate limit atteint, veuillez patienter...")
-            return "⏳ Trop de requêtes. Veuillez réessayer dans quelques instants."
+            if isinstance(data, list) and len(data) > 0:
+                return data[0].get("generated_text", "").strip()
+            elif isinstance(data, dict):
+                return data.get("generated_text", "").strip()
+        elif response.status_code == 503:
+            # Le modèle est en train de charger (cold start)
+            print("⚠️ Modèle en chargement, réessayez...")
+            return "⏳ Le modèle IA est en cours de chargement. Veuillez réessayer dans quelques secondes."
+        elif response.status_code == 401:
+            print("❌ Token invalide ou manquant")
+            return None
         else:
-            print(f"❌ Erreur OrcaRouter: {response.status_code} - {response.text}")
+            print(f"❌ Erreur HF: {response.status_code} - {response.text}")
             return None
             
     except Exception as e:
-        print(f"❌ Erreur Qwen: {e}")
+        print(f"❌ Erreur HF: {e}")
         return None
 
-if ORCA_API_KEY:
-    print(f"✅ Qwen configuré via OrcaRouter (modèle: {QWEN_MODEL})")
+if HF_TOKEN:
+    print(f"✅ Hugging Face configuré (modèle: {HF_MODEL})")
 else:
-    print("⚠️ ORCA_API_KEY non définie, le chatbot utilisera le mode basique.")
-
+    print("⚠️ HF_TOKEN non défini, le chatbot utilisera le mode basique.")
 
 # ==========================================
 # CHARGEMENT DU MODÈLE
@@ -718,20 +724,20 @@ def seasonal_analysis():
 # ==========================================
 @app.post("/chat")
 def chat(request: ChatRequest):
-    """Chatbot intelligent avec Qwen (OrcaRouter)"""
+    """Chatbot intelligent avec Hugging Face Inference API"""
     
-    # 1️⃣ Essayer Qwen
-    if ORCA_API_KEY:
+    # 1️⃣ Essayer Hugging Face
+    if HF_TOKEN:
         try:
-            reply = call_qwen(request.message)
+            reply = call_huggingface(request.message)
             if reply:
                 return {
                     "reply": reply,
                     "timestamp": date.today().isoformat(),
-                    "source": "qwen"
+                    "source": "huggingface"
                 }
         except Exception as e:
-            print(f"❌ Erreur Qwen: {e}")
+            print(f"❌ Erreur Hugging Face: {e}")
     
     # 2️⃣ Fallback interne
     msg = request.message.lower().strip()
@@ -761,6 +767,7 @@ def chat(request: ChatRequest):
     result["source"] = result.get("source", "internal")
     return result
 
+    
 # ==========================================
 # FONCTIONS CHATBOT (fallback)
 # ==========================================
