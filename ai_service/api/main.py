@@ -255,6 +255,8 @@ def get_real_revenue(period_days: int = 30, offset: int = 0) -> Dict:
             return {"error": "Base de données inaccessible"}
         
         cursor = conn.cursor()
+        
+        # ✅ Requête corrigée
         query = """
             SELECT 
                 COALESCE(SUM(total_amount), 0) as total,
@@ -269,10 +271,13 @@ def get_real_revenue(period_days: int = 30, offset: int = 0) -> Dict:
         cursor.close()
         conn.close()
         
+        if not row:
+            return {"error": "Aucune donnée trouvée pour cette période"}
+        
         return {
-            "total": float(row[0]),
-            "nb_ventes": row[1],
-            "panier_moyen": float(row[2]),
+            "total": float(row[0]) if row[0] else 0,
+            "nb_ventes": row[1] if row[1] else 0,
+            "panier_moyen": float(row[2]) if row[2] else 0,
             "period": period_days
         }
     except Exception as e:
@@ -512,7 +517,6 @@ def handle_revenue_query(entities: Dict) -> Dict:
     if "error" in revenue_data:
         return {"reply": f"❌ {revenue_data['error']}", "source": "internal"}
     
-    # Comparer avec la période précédente
     prev_revenue_data = get_real_revenue(period, offset=period)
     prev_total = prev_revenue_data.get("total", 0) if "error" not in prev_revenue_data else 0
     
