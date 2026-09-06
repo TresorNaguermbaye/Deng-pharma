@@ -308,28 +308,18 @@ def detect_intent(msg: str, entities: Dict) -> str:
 
 
 # ==========================================
-# CONFIGURATION HUGGING FACE INFERENCE API
+# CONFIGURATION HUGGING FACE (modèle compatible)
 # ==========================================
 
 HF_TOKEN = os.getenv('HF_TOKEN')
 
-# Modèles gratuits disponibles sur Hugging Face :
-# - mistralai/Mistral-7B-Instruct-v0.3 (7B, bon pour le chat)
-# - meta-llama/Llama-3.2-3B-Instruct (3B, rapide)
-# - Qwen/Qwen2.5-7B-Instruct (7B, performant)
-# - google/gemma-2-9b-it (9B, bon pour les tâches générales)
-HF_MODEL = "mistralai/Mistral-7B-Instruct-v0.3"  # Recommandé
+# ✅ MODÈLES TESTÉS ET FONCTIONNELS SUR L'API GRATUITE
+# 1. google/flan-t5-large (rapide, bon pour les réponses courtes)
+# 2. mistralai/Mistral-7B-Instruct-v0.1 (bon pour le chat)
+# 3. google/flan-t5-base (plus petit, plus rapide)
+
+HF_MODEL = "google/flan-t5-large"  # Changement de modèle
 HF_API_URL = f"https://api-inference.huggingface.co/models/{HF_MODEL}"
-
-SYSTEM_PROMPT = """Tu es l'assistant IA de DENG PHARMA, une pharmacie intelligente au Tchad.
-
-Instructions :
-1. Réponds en français, de manière professionnelle et concise.
-2. Si l'utilisateur demande une information spécifique (stock, rupture, prévision), utilise les données disponibles.
-3. Si tu ne connais pas la réponse, dis-le honnêtement.
-4. Sois amical mais professionnel.
-5. Pour les chiffres, utilise le format FCFA.
-6. Sois concis (max 3-4 phrases)."""
 
 def call_huggingface(prompt: str) -> Optional[str]:
     """Appelle l'API Hugging Face Inference (serverless)"""
@@ -343,14 +333,14 @@ def call_huggingface(prompt: str) -> Optional[str]:
             "Content-Type": "application/json"
         }
         
-        # Format pour les modèles de chat
+        # Format pour les modèles T5 (différent des modèles de chat)
+        # T5 utilise "text-to-text" format
         payload = {
-            "inputs": f"{SYSTEM_PROMPT}\n\nUtilisateur: {prompt}\nAssistant:",
+            "inputs": f"Réponds en français: {prompt}",
             "parameters": {
-                "max_new_tokens": 500,
+                "max_new_tokens": 150,
                 "temperature": 0.7,
-                "top_p": 0.9,
-                "return_full_text": False
+                "do_sample": True
             }
         }
         
@@ -366,12 +356,8 @@ def call_huggingface(prompt: str) -> Optional[str]:
             elif isinstance(data, dict):
                 return data.get("generated_text", "").strip()
         elif response.status_code == 503:
-            # Le modèle est en train de charger (cold start)
             print("⚠️ Modèle en chargement, réessayez...")
             return "⏳ Le modèle IA est en cours de chargement. Veuillez réessayer dans quelques secondes."
-        elif response.status_code == 401:
-            print("❌ Token invalide ou manquant")
-            return None
         else:
             print(f"❌ Erreur HF: {response.status_code} - {response.text}")
             return None
@@ -767,7 +753,7 @@ def chat(request: ChatRequest):
     result["source"] = result.get("source", "internal")
     return result
 
-    
+
 # ==========================================
 # FONCTIONS CHATBOT (fallback)
 # ==========================================
