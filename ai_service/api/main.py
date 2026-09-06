@@ -19,10 +19,10 @@ import numpy as np
 import pandas as pd
 import psycopg2
 import shap
+import requests
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from groq import Groq
 
 
 # ==========================================
@@ -122,7 +122,7 @@ def get_medicine_history(identifier: str, medicine_name: Optional[str] = None, d
 
 
 # ==========================================
-# FONCTIONS CHATBOT (avant la création de app)
+# FONCTIONS CHATBOT
 # ==========================================
 
 def get_medicine_stock_by_name(name: str) -> Optional[float]:
@@ -306,6 +306,73 @@ def detect_intent(msg: str, entities: Dict) -> str:
         return "aide"
     return "fallback"
 
+
+# ==========================================
+# CONFIGURATION GROQ (HTTP direct)
+# ==========================================
+
+GROQ_API_KEY = os.getenv('GROQ_API_KEY')
+GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
+
+SYSTEM_PROMPT = """Tu es l'assistant IA de DENG PHARMA, une pharmacie intelligente au Tchad.
+
+Tu as accès aux données suivantes (en temps réel via des fonctions) :
+- Stock des médicaments
+- Ruptures de stock
+- Prévisions de ventes (modèle XGBoost)
+- Chiffre d'affaires
+- Expirations
+- Recommandations de commandes
+
+Instructions :
+1. Réponds en français, de manière professionnelle et concise.
+2. Si l'utilisateur demande une information spécifique (stock, rupture, prévision), utilise les données disponibles.
+3. Si tu ne connais pas la réponse, dis-le honnêtement et propose de l'aide.
+4. Sois amical mais professionnel.
+5. Pour les chiffres, utilise le format FCFA.
+6. Sois concis (max 3-4 phrases)."""
+
+def call_groq(prompt: str) -> Optional[str]:
+    """Appelle l'API Groq via HTTP direct"""
+    if not GROQ_API_KEY:
+        return None
+    
+    try:
+        headers = {
+            "Authorization": f"Bearer {GROQ_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        
+        payload = {
+            "model": "mixtral-8x7b-32768",
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.7,
+            "max_tokens": 500,
+            "top_p": 0.9
+        }
+        
+        response = requests.post(GROQ_API_URL, json=payload, headers=headers, timeout=30)
+        
+        if response.status_code == 200:
+            data = response.json()
+            return data.get("choices", [{}])[0].get("message", {}).get("content", "")
+        else:
+            print(f"❌ Erreur Groq HTTP: {response.status_code} - {response.text}")
+            return None
+            
+    except Exception as e:
+        print(f"❌ Erreur Groq: {e}")
+        return None
+
+if GROQ_API_KEY:
+    print("✅ Groq API configurée (HTTP direct)")
+else:
+    print("⚠️ GROQ_API_KEY non définie, le chatbot utilisera le mode basique.")
+
+
 # ==========================================
 # CHARGEMENT DU MODÈLE
 # ==========================================
@@ -329,8 +396,9 @@ except FileNotFoundError as e:
     print(f"⚠️ Modèle non trouvé : {e}")
     print("   Lancez d'abord l'entraînement dans le notebook Jupyter")
 
+
 # ==========================================
-# APPLICATION FASTAPI (CRÉATION DE app)
+# APPLICATION FASTAPI
 # ==========================================
 
 app = FastAPI(
@@ -357,20 +425,6 @@ app.add_middleware(
     allow_headers=["*"]
 )
 
-# ==========================================
-# CONFIGURATION GROQ (APRÈS la création de app)
-# ==========================================
-
-GROQ_API_KEY = os.getenv('GROQ_API_KEY')
-groq_client = Groq(api_key=GROQ_API_KEY, http_client=None)
-if GROQ_API_KEY:
-    try:
-        groq_client = Groq(api_key=GROQ_API_KEY)
-        print("✅ Groq client initialisé avec succès !")
-    except Exception as e:
-        print(f"❌ Erreur Groq: {e}")
-else:
-    print("⚠️ GROQ_API_KEY non définie, le chatbot utilisera le mode basique.")
 
 # ==========================================
 # MODÈLES DE DONNÉES
@@ -396,28 +450,6 @@ class ChatRequest(BaseModel):
     message: str
     context: Optional[Dict] = {}
 
-# ==========================================
-# SYSTÈME PROMPT POUR GROQ
-# ==========================================
-
-SYSTEM_PROMPT = """Tu es l'assistant IA de DENG PHARMA, une pharmacie intelligente au Tchad.
-
-Tu as accès aux données suivantes (en temps réel via des fonctions) :
-- Stock des médicaments
-- Ruptures de stock
-- Prévisions de ventes (modèle XGBoost)
-- Chiffre d'affaires
-- Expirations
-- Recommandations de commandes
-
-Instructions :
-1. Réponds en français, de manière professionnelle et concise.
-2. Si l'utilisateur demande une information spécifique (stock, rupture, prévision), utilise les données disponibles.
-3. Si tu ne connais pas la réponse, dis-le honnêtement et propose de l'aide.
-4. Sois amical mais professionnel.
-5. Pour les chiffres, utilise le format FCFA.
-6. Sois concis (max 3-4 phrases).
-"""
 
 # ==========================================
 # ENDPOINTS
@@ -479,6 +511,7 @@ def train_model_endpoint():
         return {"status": "Entraînement lancé en arrière-plan"}
     except Exception as e:
         raise HTTPException(500, f"Erreur lors du lancement : {e}")
+
 
 # ==========================================
 # PRÉDICTION DES VENTES
@@ -558,6 +591,7 @@ def predict_sales(request: PredictionRequest):
         "database": "PostgreSQL"
     }
 
+
 # ==========================================
 # ANALYSE DE STOCK
 # ==========================================
@@ -595,6 +629,7 @@ def analyze_stock(request: StockAnalysisRequest):
         "message": message
     }
 
+
 # ==========================================
 # RECOMMANDATION DE COMMANDE
 # ==========================================
@@ -618,6 +653,7 @@ def recommend_order(request: OrderRecommendationRequest):
         "lead_time_days": request.lead_time_days,
         "message": f"📦 Commander {round(order_quantity)} unités" if order_quantity > 0 else "✅ Stock suffisant"
     }
+
 
 # ==========================================
 # SCORE DE CRITICITÉ
@@ -649,6 +685,7 @@ def get_criticality(medicine_id: str = "MED003"):
         "color": color
     }
 
+
 # ==========================================
 # ANALYSE SAISONNIÈRE
 # ==========================================
@@ -668,6 +705,7 @@ def seasonal_analysis():
         ],
         "priority_categories": ["Antipaludéens", "Réhydratation", "Antibiotiques"] if is_rainy else ["Vaccins", "Respiratoire", "Antibiotiques"]
     }
+
 
 # ==========================================
 # ANALYSE SHAP
@@ -729,19 +767,84 @@ def shap_analysis(medicine_id: str):
         "features": feature_importance
     }
 
+
 # ==========================================
-# CHATBOT INTELLIGENT AVEC GROQ
+# CHATBOT
+# ==========================================
+
+@app.post("/chat")
+def chat(request: ChatRequest):
+    """Chatbot intelligent avec Groq (HTTP direct)"""
+    
+    # Si Groq n'est pas configuré, fallback basique
+    if not GROQ_API_KEY:
+        # Essayer d'abord avec l'intention
+        msg = request.message.lower().strip()
+        entities = extract_entities(msg)
+        intent = detect_intent(msg, entities)
+        
+        if intent == "stock":
+            result = handle_stock_query(entities)
+        elif intent == "rupture":
+            result = handle_rupture_query()
+        elif intent == "prevision":
+            result = handle_prediction_query(entities)
+        elif intent == "ca":
+            result = handle_revenue_query(entities)
+        elif intent == "expiration":
+            result = handle_expiration_query(entities)
+        elif intent == "commande":
+            result = handle_order_query(entities)
+        elif intent == "vente":
+            result = handle_sales_query(entities)
+        elif intent == "aide":
+            result = handle_help()
+        else:
+            result = handle_fallback(msg)
+        
+        result["timestamp"] = date.today().isoformat()
+        result["source"] = "fallback"
+        return result
+    
+    # Avec Groq
+    try:
+        reply = call_groq(request.message)
+        
+        if reply:
+            return {
+                "reply": reply,
+                "timestamp": date.today().isoformat(),
+                "source": "groq"
+            }
+        else:
+            return {
+                "reply": "❌ Désolé, une erreur est survenue. Veuillez réessayer.",
+                "timestamp": date.today().isoformat(),
+                "source": "error"
+            }
+        
+    except Exception as e:
+        print(f"❌ Erreur Groq: {e}")
+        return {
+            "reply": "❌ Désolé, une erreur est survenue. Veuillez réessayer.",
+            "timestamp": date.today().isoformat(),
+            "source": "error"
+        }
+
+
+# ==========================================
+# FONCTIONS CHATBOT (fallback)
 # ==========================================
 
 def handle_stock_query(entities: Dict) -> Dict:
     """Répond à une question sur le stock"""
     med_name = entities.get("medicine_name")
     if not med_name:
-        return {"reply": "❓ Quel médicament vous intéresse ?", "timestamp": date.today().isoformat()}
+        return {"reply": "❓ Quel médicament vous intéresse ?"}
     
     stock = get_medicine_stock_by_name(med_name)
     if stock is None:
-        return {"reply": f"❌ Je n'ai pas trouvé de médicament '{med_name}'.", "timestamp": date.today().isoformat()}
+        return {"reply": f"❌ Je n'ai pas trouvé de médicament '{med_name}'."}
     
     if stock == 0:
         emoji, status = "🚨", "⚠️ **Rupture de stock !**"
@@ -754,10 +857,7 @@ def handle_stock_query(entities: Dict) -> Dict:
     
     suggestion = "\n💡 **Suggestion :** Pensez à commander bientôt." if stock < 10 else ""
     
-    return {
-        "reply": f"{emoji} **{med_name.capitalize()}** : {status}{suggestion}",
-        "timestamp": date.today().isoformat()
-    }
+    return {"reply": f"{emoji} **{med_name.capitalize()}** : {status}{suggestion}"}
 
 def handle_rupture_query() -> Dict:
     """Liste les médicaments en rupture"""
@@ -769,20 +869,17 @@ def handle_rupture_query() -> Dict:
         reply += "\n⚠️ **Action :** Passez commande immédiatement !"
     else:
         reply = "✅ **Aucun médicament en rupture.** Tout va bien !"
-    return {"reply": reply, "timestamp": date.today().isoformat()}
+    return {"reply": reply}
 
 def handle_prediction_query(entities: Dict) -> Dict:
     """Donne une prévision de vente"""
     med_name = entities.get("medicine_name")
     if not med_name:
-        return {"reply": "❓ Pour quel médicament voulez-vous une prévision ?", "timestamp": date.today().isoformat()}
+        return {"reply": "❓ Pour quel médicament voulez-vous une prévision ?"}
     
     history = get_medicine_history_by_name(med_name, days=30)
     if not history or len(history) < 3:
-        return {
-            "reply": f"⚠️ Pas assez de données pour **{med_name}**. Il faut au moins 3 jours d'historique.",
-            "timestamp": date.today().isoformat()
-        }
+        return {"reply": f"⚠️ Pas assez de données pour **{med_name}**. Il faut au moins 3 jours d'historique."}
     
     pred = predict_sales_from_history(history)
     avg_sales = sum(history) / len(history)
@@ -795,8 +892,7 @@ def handle_prediction_query(entities: Dict) -> Dict:
             f"  • Moyenne historique : **{avg_sales:.0f}** unités\n"
             f"  • Tendance : {trend}\n"
             f"  • Basé sur {len(history)} jours de données"
-        ),
-        "timestamp": date.today().isoformat()
+        )
     }
 
 def handle_revenue_query(entities: Dict) -> Dict:
@@ -813,8 +909,7 @@ def handle_revenue_query(entities: Dict) -> Dict:
             f"  • Période : **{period}** jours\n"
             f"  • Total : **{revenue:,.0f}** FCFA\n"
             f"  • Évolution : {emoji} **{evolution:+.1f}%**"
-        ),
-        "timestamp": date.today().isoformat()
+        )
     }
 
 def handle_expiration_query(entities: Dict) -> Dict:
@@ -830,18 +925,18 @@ def handle_expiration_query(entities: Dict) -> Dict:
             reply += f"\n... et {len(expiring) - 10} autres."
     else:
         reply = f"✅ Aucun médicament n'expire dans les {days} jours."
-    return {"reply": reply, "timestamp": date.today().isoformat()}
+    return {"reply": reply}
 
 def handle_order_query(entities: Dict) -> Dict:
     """Recommande une commande"""
     med_name = entities.get("medicine_name")
     if not med_name:
-        return {"reply": "❓ Pour quel médicament voulez-vous une recommandation ?", "timestamp": date.today().isoformat()}
+        return {"reply": "❓ Pour quel médicament voulez-vous une recommandation ?"}
     
     stock = get_medicine_stock_by_name(med_name)
     history = get_medicine_history_by_name(med_name, days=30)
     if not history:
-        return {"reply": f"⚠️ Pas assez de données pour {med_name}.", "timestamp": date.today().isoformat()}
+        return {"reply": f"⚠️ Pas assez de données pour {med_name}."}
     
     avg_daily = sum(history) / len(history)
     recommended = max(0, (avg_daily * 14) - stock)
@@ -853,8 +948,7 @@ def handle_order_query(entities: Dict) -> Dict:
             f"  • Vente moyenne : **{avg_daily:.0f}** unités/jour\n"
             f"  • Autonomie : **{stock / avg_daily:.0f}** jours\n"
             f"  • **Quantité recommandée : {recommended:.0f}** unités"
-        ),
-        "timestamp": date.today().isoformat()
+        )
     }
 
 def handle_sales_query(entities: Dict) -> Dict:
@@ -871,13 +965,12 @@ def handle_sales_query(entities: Dict) -> Dict:
                     f"  • Total (30 jours) : **{total:.0f}** unités\n"
                     f"  • Moyenne : **{avg:.0f}** unités/jour\n"
                     f"  • Meilleur jour : **{max(history):.0f}** unités"
-                ),
-                "timestamp": date.today().isoformat()
+                )
             }
         else:
-            return {"reply": f"❌ Aucune vente enregistrée pour {med_name}.", "timestamp": date.today().isoformat()}
+            return {"reply": f"❌ Aucune vente enregistrée pour {med_name}."}
     else:
-        return {"reply": "❓ Pour quel médicament voulez-vous les ventes ?", "timestamp": date.today().isoformat()}
+        return {"reply": "❓ Pour quel médicament voulez-vous les ventes ?"}
 
 def handle_help() -> Dict:
     """Affiche l'aide"""
@@ -892,8 +985,7 @@ def handle_help() -> Dict:
             "  • ⚠️ **Expirations** : 'Expirations dans 30 jours'\n"
             "  • 📦 **Commande** : 'Commander Amoxicilline'\n\n"
             "Que puis-je faire pour vous ? 😊"
-        ),
-        "timestamp": date.today().isoformat()
+        )
     }
 
 def handle_fallback(msg: str) -> Dict:
@@ -906,54 +998,9 @@ def handle_fallback(msg: str) -> Dict:
             "  • 'Prévision pour Amoxicilline'\n"
             "  • 'Quels sont les médicaments en rupture ?'\n\n"
             "Ou tapez 'aide' pour voir toutes les fonctionnalités."
-        ),
-        "timestamp": date.today().isoformat()
+        )
     }
 
-@app.post("/chat")
-def chat(request: ChatRequest):
-    """Assistant IA intelligent avec Groq LLM"""
-    
-    # Fallback si Groq n'est pas configuré
-    if not groq_client or not GROQ_API_KEY:
-        return {
-            "reply": "⚠️ Le chatbot avancé n'est pas disponible. Veuillez configurer GROQ_API_KEY.",
-            "timestamp": date.today().isoformat(),
-            "source": "fallback"
-        }
-    
-    try:
-        # Construire le message
-        messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": request.message}
-        ]
-        
-        # Appeler l'API Groq
-        response = groq_client.chat.completions.create(
-            model="mixtral-8x7b-32768",
-            messages=messages,
-            temperature=0.7,
-            max_tokens=500,
-            top_p=0.9,
-            stop=None
-        )
-        
-        reply = response.choices[0].message.content
-        
-        return {
-            "reply": reply,
-            "timestamp": date.today().isoformat(),
-            "source": "groq"
-        }
-        
-    except Exception as e:
-        print(f"❌ Erreur Groq: {e}")
-        return {
-            "reply": "❌ Désolé, une erreur est survenue. Veuillez réessayer.",
-            "timestamp": date.today().isoformat(),
-            "source": "error"
-        }
 
 print("\n✅ API DENG PHARMA prête !")
 print("📖 Documentation : http://127.0.0.1:8001/docs")
