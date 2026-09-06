@@ -340,7 +340,7 @@ GROQ_API_KEY = os.getenv('GROQ_API_KEY')
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 # ✅ Modèles Groq actifs (septembre 2026)
-GROQ_MODEL = "gemma2-9b-it"  # 🔥 Essayer celui-ci # Premier essai # Rapide et efficace pour le chat
+GROQ_MODEL = "llama-guard-3-8b"  # 🔥 Alternative
 
 SYSTEM_PROMPT = """Tu es l'assistant IA de DENG PHARMA, une pharmacie intelligente au Tchad.
 
