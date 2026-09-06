@@ -117,6 +117,152 @@ def get_medicine_history(identifier: str, medicine_name: Optional[str] = None, d
         print(f"❌ Erreur historique: {e}")
         return None
 
+
+
+
+# ==========================================
+# FONCTIONS CHATBOT
+# ==========================================
+
+def extract_medicine_name(msg: str) -> Optional[str]:
+    """Extrait le nom d'un médicament du message"""
+    # Liste des médicaments connus
+    known_medicines = [
+        "paracétamol", "ibuprofène", "amoxicilline", "cétirizine",
+        "artéméther", "quinine", "diclofénac", "métronidazole",
+        "oméprazole", "azithromycine", "ciprofloxacine"
+    ]
+    for med in known_medicines:
+        if med in msg:
+            return med
+    return None
+
+def get_medicine_stock_by_name(name: str) -> Optional[float]:
+    """Récupère le stock d'un médicament par son nom"""
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return None
+        cursor = conn.cursor()
+        query = """
+            SELECT COALESCE(SUM(l.quantity), 0) as total_stock
+            FROM inventory_stocklot l
+            JOIN medicines_medicine m ON l.medicine_id = m.id
+            WHERE m.commercial_name ILIKE %s
+        """
+        cursor.execute(query, (f'%{name}%',))
+        row = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        return float(row[0]) if row else 0
+    except Exception as e:
+        print(f"Erreur stock: {e}")
+        return None
+
+def get_top_stocks(limit: int = 5) -> List[tuple]:
+    """Retourne les médicaments avec le plus de stock"""
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return []
+        cursor = conn.cursor()
+        query = """
+            SELECT m.commercial_name, COALESCE(SUM(l.quantity), 0) as total
+            FROM medicines_medicine m
+            LEFT JOIN inventory_stocklot l ON l.medicine_id = m.id
+            GROUP BY m.id
+            ORDER BY total DESC
+            LIMIT %s
+        """
+        cursor.execute(query, (limit,))
+        rows = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        return [(row[0], float(row[1])) for row in rows if row[1] > 0]
+    except Exception as e:
+        print(f"Erreur top stocks: {e}")
+        return []
+
+def get_out_of_stock_medicines() -> List[str]:
+    """Retourne la liste des médicaments en rupture de stock"""
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return []
+        cursor = conn.cursor()
+        query = """
+            SELECT DISTINCT m.commercial_name
+            FROM medicines_medicine m
+            LEFT JOIN inventory_stocklot l ON l.medicine_id = m.id
+            WHERE l.id IS NULL OR l.quantity <= 0
+        """
+        cursor.execute(query)
+        rows = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        return [row[0] for row in rows]
+    except Exception as e:
+        print(f"Erreur ruptures: {e}")
+        return []
+
+def get_monthly_revenue() -> float:
+    """Calcule le chiffre d'affaires du mois en cours"""
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return 0
+        cursor = conn.cursor()
+        query = """
+            SELECT COALESCE(SUM(total_amount), 0)
+            FROM sales_sale
+            WHERE DATE_TRUNC('month', created_at) = DATE_TRUNC('month', CURRENT_DATE)
+        """
+        cursor.execute(query)
+        row = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        return float(row[0]) if row else 0
+    except Exception as e:
+        print(f"Erreur CA: {e}")
+        return 0
+
+def get_expiring_medicines(days: int = 30) -> List[tuple]:
+    """Retourne les médicaments qui expirent dans les X jours"""
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return []
+        cursor = conn.cursor()
+        query = """
+            SELECT m.commercial_name, l.expiry_date
+            FROM inventory_stocklot l
+            JOIN medicines_medicine m ON l.medicine_id = m.id
+            WHERE l.quantity > 0
+              AND l.expiry_date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '%s days'
+            ORDER BY l.expiry_date ASC
+        """
+        cursor.execute(query, (days,))
+        rows = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        return [(row[0], row[1].strftime('%d/%m/%Y')) for row in rows]
+    except Exception as e:
+        print(f"Erreur expirations: {e}")
+        return []
+
+def get_medicine_history_by_name(name: str, days: int = 30):
+    """Récupère l'historique des ventes par nom de médicament"""
+    return get_medicine_history(name, medicine_name=name, days=days)
+
+def predict_sales_from_history(history: List[float]) -> float:
+    """Prédit les ventes à partir de l'historique"""
+    if not history:
+        return 0
+    # Utiliser une moyenne pondérée ou le modèle si disponible
+    return sum(history[-7:]) / min(7, len(history)) * 7
+
+
+
 # ==========================================
 # CHARGEMENT DU MODÈLE
 # ==========================================
@@ -508,13 +654,88 @@ def shap_analysis(medicine_id: str):
 
 @app.post("/chat")
 def chat(request: ChatRequest):
-    """Assistant IA pour la pharmacie"""
-    msg = request.message.lower()
+    """Assistant IA intelligent pour la pharmacie"""
+    msg = request.message.lower().strip()
+    today = date.today()
     
+    # 1️⃣ Vérifier si c'est une question sur le stock
+    if "stock" in msg or "quantité" in msg or "combien" in msg:
+        # Extraire le nom du médicament
+        medicine_name = extract_medicine_name(msg)
+        if medicine_name:
+            stock = get_medicine_stock_by_name(medicine_name)
+            if stock is not None:
+                return {
+                    "reply": f"📦 Stock de {medicine_name} : **{stock}** unités disponibles.",
+                    "timestamp": today.isoformat()
+                }
+            else:
+                return {
+                    "reply": f"❌ Je n'ai pas trouvé de médicament nommé '{medicine_name}'.",
+                    "timestamp": today.isoformat()
+                }
+        else:
+            # Si aucun nom spécifique, donner le top 5 des stocks
+            top_stocks = get_top_stocks(5)
+            if top_stocks:
+                reply = "📊 **Top 5 des stocks disponibles :**\n"
+                for name, qty in top_stocks:
+                    reply += f"  • {name} : {qty} unités\n"
+                return {"reply": reply, "timestamp": today.isoformat()}
+    
+    # 2️⃣ Vérifier si c'est une question sur les ruptures
+    if "rupture" in msg or "épuisé" in msg or "manquant" in msg:
+        out_of_stock = get_out_of_stock_medicines()
+        if out_of_stock:
+            reply = "🚨 **Médicaments en rupture de stock :**\n"
+            for med in out_of_stock:
+                reply += f"  • {med}\n"
+            reply += "\n⚠️ Veuillez passer commande rapidement !"
+        else:
+            reply = "✅ **Aucun médicament en rupture de stock.** Tout est disponible."
+        return {"reply": reply, "timestamp": today.isoformat()}
+    
+    # 3️⃣ Vérifier si c'est une question sur les prévisions
+    if "prévision" in msg or "prédiction" in msg or "vente" in msg:
+        medicine_name = extract_medicine_name(msg)
+        if medicine_name:
+            # Récupérer l'historique et faire une prédiction
+            history = get_medicine_history_by_name(medicine_name, days=30)
+            if history:
+                prediction = predict_sales_from_history(history)
+                return {
+                    "reply": f"📈 **Prévision de vente pour {medicine_name} :**\n"
+                             f"  • Ventes prévues : **{prediction:.0f}** unités dans les 7 prochains jours\n"
+                             f"  • Basé sur {len(history)} jours d'historique",
+                    "timestamp": today.isoformat()
+                }
+            else:
+                return {
+                    "reply": f"❌ Pas assez de données pour {medicine_name}. Créez des ventes pour ce médicament.",
+                    "timestamp": today.isoformat()
+                }
+    
+    # 4️⃣ Vérifier si c'est une question sur le chiffre d'affaires
+    if "chiffre" in msg or "ca" in msg or "ventes" in msg:
+        revenue = get_monthly_revenue()
+        return {
+            "reply": f"💰 **Chiffre d'affaires du mois :** {revenue:,.0f} FCFA",
+            "timestamp": today.isoformat()
+        }
+    
+    # 5️⃣ Vérifier si c'est une question sur les expirations
+    if "expire" in msg or "périmé" in msg or "expiration" in msg:
+        expiring = get_expiring_medicines(30)  # 30 jours
+        if expiring:
+            reply = "⚠️ **Médicaments qui expirent dans les 30 jours :**\n"
+            for med, date_str in expiring:
+                reply += f"  • {med} (expire le {date_str})\n"
+        else:
+            reply = "✅ **Aucun médicament n'expire dans les 30 jours.**"
+        return {"reply": reply, "timestamp": today.isoformat()}
+    
+    # 6️⃣ Questions générales
     reponses = {
-        "rupture": "📊 Pour analyser un risque de rupture, utilisez /analyze/stock avec l'ID et le stock actuel.",
-        "commander": "📦 Pour une recommandation de commande, utilisez /recommend/order.",
-        "prévision": "📈 Pour les prévisions de ventes, utilisez /predict.",
         "paludisme": "🦟 En saison des pluies (juin-octobre), prévoyez un stock renforcé d'antipaludéens et de moustiquaires.",
         "méningite": "🏥 La méningite sévit en saison sèche (février-avril). Vérifiez vos stocks de vaccins.",
         "saison": "🌧️ Saison des pluies : juin-octobre (paludisme, diarrhées)\n☀️ Saison sèche : novembre-mai (méningite, infections respiratoires)",
@@ -522,11 +743,21 @@ def chat(request: ChatRequest):
     
     for key, reponse in reponses.items():
         if key in msg:
-            return {"reply": reponse, "timestamp": date.today().isoformat()}
+            return {"reply": reponse, "timestamp": today.isoformat()}
     
+    # 7️⃣ Réponse par défaut
     return {
-        "reply": "Je peux vous aider sur : prévisions, ruptures, commandes, criticité, saisons. Que voulez-vous savoir ?",
-        "timestamp": date.today().isoformat()
+        "reply": (
+            "🤖 Je peux vous aider sur :\n"
+            "  • 📦 **Stock** : 'Quel est le stock de Paracétamol ?'\n"
+            "  • 🚨 **Ruptures** : 'Quels médicaments sont en rupture ?'\n"
+            "  • 📈 **Prévisions** : 'Prévision pour Amoxicilline'\n"
+            "  • 💰 **Chiffre d'affaires** : 'Quel est le CA du mois ?'\n"
+            "  • ⚠️ **Expirations** : 'Quels médicaments expirent bientôt ?'\n"
+            "  • 🩺 **Santé** : 'Paludisme' ou 'Méningite'\n\n"
+            "Que voulez-vous savoir ?"
+        ),
+        "timestamp": today.isoformat()
     }
 
 print("\n✅ API DENG PHARMA prête !")
