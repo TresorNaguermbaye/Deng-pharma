@@ -20,6 +20,11 @@ from .serializers import SaleCreateSerializer, SaleListSerializer
 from apps.inventory.models import StockLot, StockMovement
 
 
+import logging
+
+# Configuration du logger
+logger = logging.getLogger(__name__)
+
 class CanCreateSale(permissions.BasePermission):
     """Permission : seul un AUDITEUR ne peut pas créer de vente"""
     def has_permission(self, request, view):
@@ -33,7 +38,9 @@ class CanCreateSale(permissions.BasePermission):
 def generate_invoice_signature(sale_id: int, total: float) -> str:
     """Génère une signature HMAC pour vérifier l'authenticité de la facture"""
     secret = settings.SECRET_KEY
-    data = f"{sale_id}:{total}"
+    total_str = f"{float(total):.2f}"
+    data = f"{sale_id}:{total_str}"
+        
     signature = hmac.new(
         secret.encode('utf-8'),
         data.encode('utf-8'),
@@ -199,7 +206,6 @@ class SaleViewSet(viewsets.ModelViewSet):
         response['Content-Disposition'] = f'attachment; filename="facture_{sale.id}.pdf"'
         return response
 
-
 class VerifyInvoiceView(APIView):
     """Vue pour vérifier l'authenticité d'une facture"""
     permission_classes = [AllowAny]
@@ -208,15 +214,20 @@ class VerifyInvoiceView(APIView):
         sale = get_object_or_404(Sale, id=sale_id)
         signature = request.query_params.get('sign', '')
         
-        # Vérifier la signature
         expected_signature = generate_invoice_signature(sale.id, sale.total_amount)
+        
+        # ✅ LOGS POUR VOIR LES SIGNATURES
+        logger.info(f"🔍 Vérification facture #{sale.id}")
+        logger.info(f"   Signature reçue: '{signature}'")
+        logger.info(f"   Signature attendue: '{expected_signature}'")
+        logger.info(f"   Total: {sale.total_amount} (type: {type(sale.total_amount).__name__})")
+        
         is_valid = signature == expected_signature
         
         return Response({
             'id': sale.id,
             'date': sale.created_at,
             'total': sale.total_amount,
-            'customer': sale.customer_name or 'Client comptoir',
             'valid': is_valid,
             'message': 'Facture authentique ✅' if is_valid else 'Facture invalide ❌'
         })

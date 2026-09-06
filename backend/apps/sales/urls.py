@@ -8,5 +8,5 @@ router.register(r'sales', SaleViewSet)
 urlpatterns = [
     path('', include(router.urls)),
     path('sales/<int:sale_id>/invoice/', invoice_pdf, name='sale-invoice'),
-     path('sales/verify/<int:sale_id>/', VerifyInvoiceView.as_view(), name='verify-invoice'),
+    path('sales/verify/<int:sale_id>/', VerifyInvoiceView.as_view(), name='verify-invoice'),
 ]
