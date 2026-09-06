@@ -335,6 +335,7 @@ Instructions :
 def call_groq(prompt: str) -> Optional[str]:
     """Appelle l'API Groq via HTTP direct"""
     if not GROQ_API_KEY:
+        print("❌ GROQ_API_KEY non définie")
         return None
     
     try:
@@ -354,11 +355,20 @@ def call_groq(prompt: str) -> Optional[str]:
             "top_p": 0.9
         }
         
+        print(f"🔍 Envoi de la requête à Groq...")
         response = requests.post(GROQ_API_URL, json=payload, headers=headers, timeout=30)
+        
+        print(f"📡 Réponse Groq: {response.status_code}")
+        print(f"📄 Corps de la réponse: {response.text[:500]}")  # Affiche le début
         
         if response.status_code == 200:
             data = response.json()
-            return data.get("choices", [{}])[0].get("message", {}).get("content", "")
+            content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+            if content:
+                return content
+            else:
+                print("❌ Réponse vide de Groq")
+                return None
         else:
             print(f"❌ Erreur Groq HTTP: {response.status_code} - {response.text}")
             return None
@@ -366,13 +376,7 @@ def call_groq(prompt: str) -> Optional[str]:
     except Exception as e:
         print(f"❌ Erreur Groq: {e}")
         return None
-
-if GROQ_API_KEY:
-    print("✅ Groq API configurée (HTTP direct)")
-else:
-    print("⚠️ GROQ_API_KEY non définie, le chatbot utilisera le mode basique.")
-
-
+    
 # ==========================================
 # CHARGEMENT DU MODÈLE
 # ==========================================
