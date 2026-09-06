@@ -306,58 +306,53 @@ def detect_intent(msg: str, entities: Dict) -> str:
         return "aide"
     return "fallback"
 
-
 # ==========================================
-# CONFIGURATION MISTRAL AI
+# CONFIGURATION ORCAROUTER (Qwen gratuit)
 # ==========================================
 
-MISTRAL_API_KEY = os.getenv('MISTRAL_API_KEY')
-MISTRAL_API_URL = "https://api.mistral.ai/v1/chat/completions"
+ORCA_API_KEY = os.getenv('ORCA_API_KEY')
+ORCA_API_URL = "https://api.orcarouter.com/v1/chat/completions"
+
+# Modèle Qwen gratuit
+QWEN_MODEL = "qwen/qwen3.8-27b-free"
 
 SYSTEM_PROMPT = """Tu es l'assistant IA de DENG PHARMA, une pharmacie intelligente au Tchad.
-
-Tu as accès aux données suivantes (en temps réel via des fonctions) :
-- Stock des médicaments
-- Ruptures de stock
-- Prévisions de ventes (modèle XGBoost)
-- Chiffre d'affaires
-- Expirations
-- Recommandations de commandes
 
 Instructions :
 1. Réponds en français, de manière professionnelle et concise.
 2. Si l'utilisateur demande une information spécifique (stock, rupture, prévision), utilise les données disponibles.
-3. Si tu ne connais pas la réponse, dis-le honnêtement et propose de l'aide.
+3. Si tu ne connais pas la réponse, dis-le honnêtement.
 4. Sois amical mais professionnel.
 5. Pour les chiffres, utilise le format FCFA.
 6. Sois concis (max 3-4 phrases)."""
 
-def call_mistral(prompt: str) -> Optional[str]:
-    """Appelle l'API Mistral via HTTP direct"""
-    if not MISTRAL_API_KEY:
-        print("❌ MISTRAL_API_KEY non définie")
+def call_qwen(prompt: str) -> Optional[str]:
+    """Appelle l'API Qwen via OrcaRouter"""
+    if not ORCA_API_KEY:
+        print("❌ ORCA_API_KEY non définie")
         return None
     
     try:
         headers = {
-            "Authorization": f"Bearer {MISTRAL_API_KEY}",
+            "Authorization": f"Bearer {ORCA_API_KEY}",
             "Content-Type": "application/json"
         }
         
         payload = {
-            "model": "mistral-small-latest",
+            "model": QWEN_MODEL,
             "messages": [
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": prompt}
             ],
             "temperature": 0.7,
-            "max_tokens": 500
+            "max_tokens": 500,
+            "top_p": 0.9
         }
         
-        print(f"🔍 Envoi de la requête à Mistral...")
-        response = requests.post(MISTRAL_API_URL, json=payload, headers=headers, timeout=30)
+        print(f"🔍 Envoi de la requête à Qwen via OrcaRouter...")
+        response = requests.post(ORCA_API_URL, json=payload, headers=headers, timeout=60)
         
-        print(f"📡 Réponse Mistral: {response.status_code}")
+        print(f"📡 Réponse OrcaRouter: {response.status_code}")
         
         if response.status_code == 200:
             data = response.json()
@@ -365,18 +360,25 @@ def call_mistral(prompt: str) -> Optional[str]:
             if content:
                 return content
             else:
-                print("❌ Réponse vide de Mistral")
+                print("❌ Réponse vide de Qwen")
                 return None
         elif response.status_code == 429:
             print("⚠️ Rate limit atteint, veuillez patienter...")
-            return "⚠️ Le chatbot est momentanément indisponible. Veuillez réessayer dans quelques instants."
+            return "⏳ Trop de requêtes. Veuillez réessayer dans quelques instants."
         else:
-            print(f"❌ Erreur Mistral: {response.status_code} - {response.text}")
+            print(f"❌ Erreur OrcaRouter: {response.status_code} - {response.text}")
             return None
             
     except Exception as e:
-        print(f"❌ Erreur Mistral: {e}")
+        print(f"❌ Erreur Qwen: {e}")
         return None
+
+if ORCA_API_KEY:
+    print(f"✅ Qwen configuré via OrcaRouter (modèle: {QWEN_MODEL})")
+else:
+    print("⚠️ ORCA_API_KEY non définie, le chatbot utilisera le mode basique.")
+
+
 # ==========================================
 # CHARGEMENT DU MODÈLE
 # ==========================================
@@ -714,103 +716,50 @@ def seasonal_analysis():
 # ==========================================
 # ANALYSE SHAP
 # ==========================================
-
-@app.get("/shap-analysis")
-def shap_analysis(medicine_id: str):
-    """Retourne l'importance des variables (SHAP) pour un médicament."""
-    if model is None:
-        raise HTTPException(503, "Modèle non disponible.")
-
-    history = get_medicine_history(identifier=medicine_id, days=30)
-    if not history or len(history) < 5:
-        return {"error": "Pas assez d'historique pour calculer SHAP."}
-
-    hist = history[-30:] if len(history) >= 30 else history
-    if len(hist) < 30:
-        hist = [45.0] * (30 - len(hist)) + hist
-
-    lag_1 = hist[-1]
-    lag_7 = hist[-7]
-    lag_30 = hist[0]
-    rolling_mean_7 = sum(hist[-7:]) / 7
-    rolling_mean_30 = sum(hist) / 30
-
-    last_date = date.today() - timedelta(days=1)
-    dow = last_date.weekday()
-    month = last_date.month
-    is_weekend = 1 if dow >= 5 else 0
-    season = 1 if month in [6, 7, 8, 9, 10] else 0
-
-    features = {
-        'day_of_week': dow,
-        'month': month,
-        'is_weekend': is_weekend,
-        'season': season,
-        'lag_1': lag_1,
-        'lag_7': lag_7,
-        'lag_30': lag_30,
-        'rolling_mean_7': rolling_mean_7,
-        'rolling_mean_30': rolling_mean_30,
-        'price': 2500
-    }
-
-    X = pd.DataFrame([features])[features_list]
-
-    explainer = shap.TreeExplainer(model)
-    shap_values = explainer.shap_values(X)
-
-    feature_importance = []
-    for i, name in enumerate(features_list):
-        feature_importance.append({
-            "name": name,
-            "importance": float(shap_values[0][i])
-        })
-
-    return {
-        "medicine_id": medicine_id,
-        "features": feature_importance
-    }
-
-
-# ==========================================
-# CHATBOT
-# ==========================================
 @app.post("/chat")
 def chat(request: ChatRequest):
-    """Chatbot intelligent avec Mistral LLM"""
+    """Chatbot intelligent avec Qwen (OrcaRouter)"""
     
-    # Fallback si Mistral n'est pas configuré
-    if not MISTRAL_API_KEY:
-        return {
-            "reply": "⚠️ Le chatbot avancé n'est pas disponible. Veuillez configurer MISTRAL_API_KEY.",
-            "timestamp": date.today().isoformat(),
-            "source": "fallback"
-        }
+    # 1️⃣ Essayer Qwen
+    if ORCA_API_KEY:
+        try:
+            reply = call_qwen(request.message)
+            if reply:
+                return {
+                    "reply": reply,
+                    "timestamp": date.today().isoformat(),
+                    "source": "qwen"
+                }
+        except Exception as e:
+            print(f"❌ Erreur Qwen: {e}")
     
-    try:
-        reply = call_mistral(request.message)
-        
-        if reply:
-            return {
-                "reply": reply,
-                "timestamp": date.today().isoformat(),
-                "source": "mistral"
-            }
-        else:
-            return {
-                "reply": "❌ Désolé, une erreur est survenue. Veuillez réessayer.",
-                "timestamp": date.today().isoformat(),
-                "source": "error"
-            }
-        
-    except Exception as e:
-        print(f"❌ Erreur Mistral: {e}")
-        return {
-            "reply": "❌ Désolé, une erreur est survenue. Veuillez réessayer.",
-            "timestamp": date.today().isoformat(),
-            "source": "error"
-        }
-
+    # 2️⃣ Fallback interne
+    msg = request.message.lower().strip()
+    entities = extract_entities(msg)
+    intent = detect_intent(msg, entities)
+    
+    if intent == "stock":
+        result = handle_stock_query(entities)
+    elif intent == "rupture":
+        result = handle_rupture_query()
+    elif intent == "prevision":
+        result = handle_prediction_query(entities)
+    elif intent == "ca":
+        result = handle_revenue_query(entities)
+    elif intent == "expiration":
+        result = handle_expiration_query(entities)
+    elif intent == "commande":
+        result = handle_order_query(entities)
+    elif intent == "vente":
+        result = handle_sales_query(entities)
+    elif intent == "aide":
+        result = handle_help()
+    else:
+        result = handle_fallback(msg)
+    
+    result["timestamp"] = date.today().isoformat()
+    result["source"] = result.get("source", "internal")
+    return result
 
 # ==========================================
 # FONCTIONS CHATBOT (fallback)
