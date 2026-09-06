@@ -26,24 +26,6 @@ from groq import Groq
 
 
 # ==========================================
-# CONFIGURATION GROQ
-# ==========================================
-
-GROQ_API_KEY = os.getenv('GROQ_API_KEY')
-groq_client = None
-
-if GROQ_API_KEY:
-    try:
-        groq_client = Groq(api_key=GROQ_API_KEY)
-        print("✅ Groq client initialisé avec succès !")
-    except Exception as e:
-        print(f"❌ Erreur Groq: {e}")
-else:
-    print("⚠️ GROQ_API_KEY non définie, le chatbot utilisera le mode basique.")
-
-
-
-# ==========================================
 # CONNEXION À LA BASE DE DONNÉES POSTGRESQL
 # ==========================================
 
@@ -138,83 +120,191 @@ def get_medicine_history(identifier: str, medicine_name: Optional[str] = None, d
         print(f"❌ Erreur historique: {e}")
         return None
 
-# ==========================================
-# FONCTIONS CHATBOT
-# ==========================================
 
 # ==========================================
-# CHATBOT AVEC GROQ
+# FONCTIONS CHATBOT (avant la création de app)
 # ==========================================
 
-SYSTEM_PROMPT = """Tu es l'assistant IA de DENG PHARMA, une pharmacie intelligente au Tchad.
-
-Tu as accès aux données suivantes (en temps réel via des fonctions) :
-- Stock des médicaments
-- Ruptures de stock
-- Prévisions de ventes (modèle XGBoost)
-- Chiffre d'affaires
-- Expirations
-- Recommandations de commandes
-
-Instructions :
-1. Réponds en français, de manière professionnelle et concise.
-2. Si l'utilisateur demande une information spécifique (stock, rupture, prévision), utilise les données disponibles.
-3. Si tu ne connais pas la réponse, dis-le honnêtement et propose de l'aide.
-4. Sois amical mais professionnel (tutoiement).
-5. Pour les chiffres, utilise le format FCFA.
-6. Si l'utilisateur dit "bonjour", "salut", réponds poliment.
-
-Règles :
-- Ne jamais inventer de données.
-- Si une donnée est manquante, propose une alternative.
-- Reste dans le contexte pharmaceutique.
-- Sois concis (max 3-4 phrases).
-"""
-
-@app.post("/chat")
-def chat(request: ChatRequest):
-    """Chatbot intelligent avec Groq LLM"""
-    
-    # Fallback si Groq n'est pas configuré
-    if not groq_client or not GROQ_API_KEY:
-        return {
-            "reply": "⚠️ Le chatbot avancé n'est pas disponible. Veuillez configurer GROQ_API_KEY.",
-            "timestamp": date.today().isoformat(),
-            "source": "fallback"
-        }
-    
+def get_medicine_stock_by_name(name: str) -> Optional[float]:
+    """Récupère le stock d'un médicament par son nom"""
     try:
-        # Construire le message
-        messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": request.message}
-        ]
-        
-        # Appeler l'API Groq
-        response = groq_client.chat.completions.create(
-            model="mixtral-8x7b-32768",  # Modèle le plus performant
-            messages=messages,
-            temperature=0.7,
-            max_tokens=500,
-            top_p=0.9,
-            stop=None
-        )
-        
-        reply = response.choices[0].message.content
-        
-        return {
-            "reply": reply,
-            "timestamp": date.today().isoformat(),
-            "source": "groq"
-        }
-        
+        conn = get_db_connection()
+        if not conn:
+            return None
+        cursor = conn.cursor()
+        query = """
+            SELECT COALESCE(SUM(l.quantity), 0) as total_stock
+            FROM inventory_stocklot l
+            JOIN medicines_medicine m ON l.medicine_id = m.id
+            WHERE m.commercial_name ILIKE %s
+        """
+        cursor.execute(query, (f'%{name}%',))
+        row = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        return float(row[0]) if row else 0
     except Exception as e:
-        print(f"❌ Erreur Groq: {e}")
-        return {
-            "reply": "❌ Désolé, une erreur est survenue. Veuillez réessayer.",
-            "timestamp": date.today().isoformat(),
-            "source": "error"
-        }
+        print(f"Erreur stock: {e}")
+        return None
+
+def get_top_stocks(limit: int = 5) -> List[tuple]:
+    """Retourne les médicaments avec le plus de stock"""
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return []
+        cursor = conn.cursor()
+        query = """
+            SELECT m.commercial_name, COALESCE(SUM(l.quantity), 0) as total
+            FROM medicines_medicine m
+            LEFT JOIN inventory_stocklot l ON l.medicine_id = m.id
+            GROUP BY m.id
+            ORDER BY total DESC
+            LIMIT %s
+        """
+        cursor.execute(query, (limit,))
+        rows = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        return [(row[0], float(row[1])) for row in rows if row[1] > 0]
+    except Exception as e:
+        print(f"Erreur top stocks: {e}")
+        return []
+
+def get_out_of_stock_medicines() -> List[str]:
+    """Retourne la liste des médicaments en rupture de stock"""
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return []
+        cursor = conn.cursor()
+        query = """
+            SELECT DISTINCT m.commercial_name
+            FROM medicines_medicine m
+            LEFT JOIN inventory_stocklot l ON l.medicine_id = m.id
+            WHERE l.id IS NULL OR l.quantity <= 0
+        """
+        cursor.execute(query)
+        rows = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        return [row[0] for row in rows]
+    except Exception as e:
+        print(f"Erreur ruptures: {e}")
+        return []
+
+def get_revenue_period(days: int, offset: int = 0) -> float:
+    """Calcule le CA sur une période donnée"""
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return 0
+        cursor = conn.cursor()
+        query = """
+            SELECT COALESCE(SUM(total_amount), 0)
+            FROM sales_sale
+            WHERE created_at >= CURRENT_DATE - INTERVAL '%s days' - INTERVAL '%s days'
+              AND created_at < CURRENT_DATE - INTERVAL '%s days'
+        """
+        cursor.execute(query, (days + offset, offset, offset))
+        row = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        return float(row[0]) if row else 0
+    except Exception as e:
+        print(f"Erreur revenue: {e}")
+        return 0
+
+def get_expiring_medicines(days: int = 30) -> List[tuple]:
+    """Retourne les médicaments qui expirent dans les X jours"""
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return []
+        cursor = conn.cursor()
+        query = """
+            SELECT m.commercial_name, l.expiry_date
+            FROM inventory_stocklot l
+            JOIN medicines_medicine m ON l.medicine_id = m.id
+            WHERE l.quantity > 0
+              AND l.expiry_date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '%s days'
+            ORDER BY l.expiry_date ASC
+        """
+        cursor.execute(query, (days,))
+        rows = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        return [(row[0], row[1].strftime('%d/%m/%Y')) for row in rows]
+    except Exception as e:
+        print(f"Erreur expirations: {e}")
+        return []
+
+def get_medicine_history_by_name(name: str, days: int = 30):
+    """Récupère l'historique des ventes par nom de médicament"""
+    return get_medicine_history(name, medicine_name=name, days=days)
+
+def predict_sales_from_history(history: List[float]) -> float:
+    """Prédit les ventes à partir de l'historique"""
+    if not history:
+        return 0
+    return sum(history[-7:]) / min(7, len(history)) * 7
+
+def extract_entities(msg: str) -> Dict:
+    """Extrait les entités du message"""
+    entities = {
+        "medicine_name": None,
+        "quantity": None,
+        "period": "7",
+        "medicine_id": None,
+    }
+    
+    medicines = [
+        "paracétamol", "ibuprofène", "amoxicilline", "cétirizine",
+        "artéméther", "quinine", "diclofénac", "métronidazole",
+        "oméprazole", "azithromycine", "ciprofloxacine", "sro",
+        "vaccin", "moustiquaire", "ceftriaxone"
+    ]
+    
+    for med in medicines:
+        if med in msg:
+            entities["medicine_name"] = med
+            break
+    
+    numbers = re.findall(r'\d+', msg)
+    if numbers:
+        entities["quantity"] = int(numbers[0])
+    
+    if "jour" in msg:
+        days = re.findall(r'(\d+)\s*jour', msg)
+        entities["period"] = days[0] if days else "7"
+    elif "semaine" in msg:
+        weeks = re.findall(r'(\d+)\s*semaine', msg)
+        entities["period"] = str(int(weeks[0]) * 7) if weeks else "7"
+    elif "mois" in msg:
+        months = re.findall(r'(\d+)\s*mois', msg)
+        entities["period"] = str(int(months[0]) * 30) if months else "30"
+    
+    return entities
+
+def detect_intent(msg: str, entities: Dict) -> str:
+    """Détecte l'intention du message"""
+    if any(k in msg for k in ["stock", "combien", "quantité", "disponible", "reste", "a-t-on"]) and entities.get("medicine_name"):
+        return "stock"
+    if any(k in msg for k in ["rupture", "épuisé", "manquant", "plus de", "en rade"]):
+        return "rupture"
+    if any(k in msg for k in ["prévision", "prédiction", "prévoir", "estimer"]) and entities.get("medicine_name"):
+        return "prevision"
+    if any(k in msg for k in ["chiffre", "ca", "revenu", "recette", "gagné"]):
+        return "ca"
+    if any(k in msg for k in ["expire", "périmé", "péremption", "date limite"]):
+        return "expiration"
+    if any(k in msg for k in ["commander", "achat", "approvisionner", "réappro"]):
+        return "commande"
+    if any(k in msg for k in ["vente", "vendu", "achat client"]):
+        return "vente"
+    if "aide" in msg or "help" in msg or "comment" in msg:
+        return "aide"
+    return "fallback"
 
 # ==========================================
 # CHARGEMENT DU MODÈLE
@@ -240,7 +330,7 @@ except FileNotFoundError as e:
     print("   Lancez d'abord l'entraînement dans le notebook Jupyter")
 
 # ==========================================
-# APPLICATION FASTAPI
+# APPLICATION FASTAPI (CRÉATION DE app)
 # ==========================================
 
 app = FastAPI(
@@ -268,6 +358,22 @@ app.add_middleware(
 )
 
 # ==========================================
+# CONFIGURATION GROQ (APRÈS la création de app)
+# ==========================================
+
+GROQ_API_KEY = os.getenv('GROQ_API_KEY')
+groq_client = None
+
+if GROQ_API_KEY:
+    try:
+        groq_client = Groq(api_key=GROQ_API_KEY)
+        print("✅ Groq client initialisé avec succès !")
+    except Exception as e:
+        print(f"❌ Erreur Groq: {e}")
+else:
+    print("⚠️ GROQ_API_KEY non définie, le chatbot utilisera le mode basique.")
+
+# ==========================================
 # MODÈLES DE DONNÉES
 # ==========================================
 
@@ -290,6 +396,29 @@ class OrderRecommendationRequest(BaseModel):
 class ChatRequest(BaseModel):
     message: str
     context: Optional[Dict] = {}
+
+# ==========================================
+# SYSTÈME PROMPT POUR GROQ
+# ==========================================
+
+SYSTEM_PROMPT = """Tu es l'assistant IA de DENG PHARMA, une pharmacie intelligente au Tchad.
+
+Tu as accès aux données suivantes (en temps réel via des fonctions) :
+- Stock des médicaments
+- Ruptures de stock
+- Prévisions de ventes (modèle XGBoost)
+- Chiffre d'affaires
+- Expirations
+- Recommandations de commandes
+
+Instructions :
+1. Réponds en français, de manière professionnelle et concise.
+2. Si l'utilisateur demande une information spécifique (stock, rupture, prévision), utilise les données disponibles.
+3. Si tu ne connais pas la réponse, dis-le honnêtement et propose de l'aide.
+4. Sois amical mais professionnel.
+5. Pour les chiffres, utilise le format FCFA.
+6. Sois concis (max 3-4 phrases).
+"""
 
 # ==========================================
 # ENDPOINTS
@@ -602,7 +731,7 @@ def shap_analysis(medicine_id: str):
     }
 
 # ==========================================
-# CHATBOT INTELLIGENT
+# CHATBOT INTELLIGENT AVEC GROQ
 # ==========================================
 
 def handle_stock_query(entities: Dict) -> Dict:
@@ -784,40 +913,48 @@ def handle_fallback(msg: str) -> Dict:
 
 @app.post("/chat")
 def chat(request: ChatRequest):
-    """Assistant IA intelligent pour la pharmacie"""
-    msg = request.message.lower().strip()
-    today = date.today()
+    """Assistant IA intelligent avec Groq LLM"""
     
-    # Extraire les entités
-    entities = extract_entities(msg)
-    print(f"🔍 Entités extraites: {entities}")
+    # Fallback si Groq n'est pas configuré
+    if not groq_client or not GROQ_API_KEY:
+        return {
+            "reply": "⚠️ Le chatbot avancé n'est pas disponible. Veuillez configurer GROQ_API_KEY.",
+            "timestamp": date.today().isoformat(),
+            "source": "fallback"
+        }
     
-    # Détecter l'intention
-    intent = detect_intent(msg, entities)
-    print(f"🎯 Intention détectée: {intent}")
-    
-    # Exécuter l'action
-    if intent == "stock":
-        result = handle_stock_query(entities)
-    elif intent == "rupture":
-        result = handle_rupture_query()
-    elif intent == "prevision":
-        result = handle_prediction_query(entities)
-    elif intent == "ca":
-        result = handle_revenue_query(entities)
-    elif intent == "expiration":
-        result = handle_expiration_query(entities)
-    elif intent == "commande":
-        result = handle_order_query(entities)
-    elif intent == "vente":
-        result = handle_sales_query(entities)
-    elif intent == "aide":
-        result = handle_help()
-    else:
-        result = handle_fallback(msg)
-    
-    result["timestamp"] = today.isoformat()
-    return result
+    try:
+        # Construire le message
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": request.message}
+        ]
+        
+        # Appeler l'API Groq
+        response = groq_client.chat.completions.create(
+            model="mixtral-8x7b-32768",
+            messages=messages,
+            temperature=0.7,
+            max_tokens=500,
+            top_p=0.9,
+            stop=None
+        )
+        
+        reply = response.choices[0].message.content
+        
+        return {
+            "reply": reply,
+            "timestamp": date.today().isoformat(),
+            "source": "groq"
+        }
+        
+    except Exception as e:
+        print(f"❌ Erreur Groq: {e}")
+        return {
+            "reply": "❌ Désolé, une erreur est survenue. Veuillez réessayer.",
+            "timestamp": date.today().isoformat(),
+            "source": "error"
+        }
 
 print("\n✅ API DENG PHARMA prête !")
 print("📖 Documentation : http://127.0.0.1:8001/docs")
