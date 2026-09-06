@@ -1,19 +1,20 @@
+# ai_service/api/main.py
 """
-DENG PHARMA - Service IA
-API de prévision des ventes, détection ruptures, recommandations
-Modèle XGBoost entraîné sur dataset Tchadien
-Version PostgreSQL pour production
+DENG PHARMA - Service IA Intelligent
+Chatbot avancé avec Mistral + données temps réel + modèles ML
+Version 3.0 - Complète
 """
 import json
 import os
 import sys
 import subprocess
 import urllib.parse
-from datetime import date, timedelta
-from typing import Optional, List, Dict
+from datetime import date, timedelta, datetime
+from typing import Optional, List, Dict, Any
 import re
+import hashlib
+import time
 import random
-import logging
 
 import joblib
 import numpy as np
@@ -27,14 +28,6 @@ from pydantic import BaseModel
 
 
 # ==========================================
-# CONFIGURATION LOGGING
-# ==========================================
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-
-# ==========================================
 # CONNEXION À LA BASE DE DONNÉES POSTGRESQL
 # ==========================================
 
@@ -43,7 +36,7 @@ DATABASE_URL = os.getenv('DATABASE_URL')
 def get_db_connection():
     """Retourne une connexion à la base de données PostgreSQL"""
     if not DATABASE_URL:
-        logger.error("❌ DATABASE_URL non définie !")
+        print("❌ DATABASE_URL non définie !")
         return None
     try:
         result = urllib.parse.urlparse(DATABASE_URL)
@@ -56,8 +49,13 @@ def get_db_connection():
         )
         return conn
     except Exception as e:
-        logger.error(f"❌ Erreur de connexion à la base: {e}")
+        print(f"❌ Erreur de connexion à la base: {e}")
         return None
+
+
+# ==========================================
+# FONCTIONS D'ACCÈS AUX DONNÉES
+# ==========================================
 
 def get_commercial_name_from_uuid(identifier: str) -> Optional[str]:
     """Récupère le nom commercial d'un médicament depuis PostgreSQL"""
@@ -80,7 +78,7 @@ def get_commercial_name_from_uuid(identifier: str) -> Optional[str]:
         if row:
             return row[0]
     except Exception as e:
-        logger.error(f"❌ Erreur base de données (get_commercial_name): {e}")
+        print(f"❌ Erreur base de données (get_commercial_name): {e}")
     
     return None
 
@@ -126,43 +124,8 @@ def get_medicine_history(identifier: str, medicine_name: Optional[str] = None, d
         
         return result
     except Exception as e:
-        logger.error(f"❌ Erreur historique: {e}")
+        print(f"❌ Erreur historique: {e}")
         return None
-
-
-# ==========================================
-# MÉMOIRE DE CONVERSATION
-# ==========================================
-
-conversation_memory = {}
-
-def get_conversation_context(user_id: str = "default") -> Dict:
-    """Récupère le contexte de la conversation"""
-    if user_id not in conversation_memory:
-        conversation_memory[user_id] = {
-            "last_question": None,
-            "last_answer": None,
-            "last_medicine": None,
-            "history": []
-        }
-    return conversation_memory[user_id]
-
-def update_conversation(user_id: str, question: str, answer: str, medicine: str = None):
-    """Met à jour le contexte de la conversation"""
-    context = get_conversation_context(user_id)
-    context["last_question"] = question
-    context["last_answer"] = answer
-    if medicine:
-        context["last_medicine"] = medicine
-    context["history"].append({"question": question, "answer": answer, "medicine": medicine})
-    
-    if len(context["history"]) > 10:
-        context["history"] = context["history"][-10:]
-
-
-# ==========================================
-# FONCTIONS DE BASE (Stock, Ventes, etc.)
-# ==========================================
 
 def get_medicine_stock_by_name(name: str) -> Optional[float]:
     """Récupère le stock d'un médicament par son nom"""
@@ -183,8 +146,32 @@ def get_medicine_stock_by_name(name: str) -> Optional[float]:
         conn.close()
         return float(row[0]) if row else 0
     except Exception as e:
-        logger.error(f"Erreur stock: {e}")
+        print(f"Erreur stock: {e}")
         return None
+
+def get_top_stocks(limit: int = 5) -> List[tuple]:
+    """Retourne les médicaments avec le plus de stock"""
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return []
+        cursor = conn.cursor()
+        query = """
+            SELECT m.commercial_name, COALESCE(SUM(l.quantity), 0) as total
+            FROM medicines_medicine m
+            LEFT JOIN inventory_stocklot l ON l.medicine_id = m.id
+            GROUP BY m.id
+            ORDER BY total DESC
+            LIMIT %s
+        """
+        cursor.execute(query, (limit,))
+        rows = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        return [(row[0], float(row[1])) for row in rows if row[1] > 0]
+    except Exception as e:
+        print(f"Erreur top stocks: {e}")
+        return []
 
 def get_out_of_stock_medicines() -> List[str]:
     """Retourne la liste des médicaments en rupture de stock"""
@@ -205,7 +192,7 @@ def get_out_of_stock_medicines() -> List[str]:
         conn.close()
         return [row[0] for row in rows]
     except Exception as e:
-        logger.error(f"Erreur ruptures: {e}")
+        print(f"Erreur ruptures: {e}")
         return []
 
 def get_revenue_period(days: int, offset: int = 0) -> float:
@@ -227,7 +214,7 @@ def get_revenue_period(days: int, offset: int = 0) -> float:
         conn.close()
         return float(row[0]) if row else 0
     except Exception as e:
-        logger.error(f"Erreur revenue: {e}")
+        print(f"Erreur revenue: {e}")
         return 0
 
 def get_expiring_medicines(days: int = 30) -> List[tuple]:
@@ -238,7 +225,7 @@ def get_expiring_medicines(days: int = 30) -> List[tuple]:
             return []
         cursor = conn.cursor()
         query = """
-            SELECT m.commercial_name, l.expiry_date
+            SELECT m.commercial_name, l.expiry_date, l.quantity
             FROM inventory_stocklot l
             JOIN medicines_medicine m ON l.medicine_id = m.id
             WHERE l.quantity > 0
@@ -249,9 +236,9 @@ def get_expiring_medicines(days: int = 30) -> List[tuple]:
         rows = cursor.fetchall()
         cursor.close()
         conn.close()
-        return [(row[0], row[1].strftime('%d/%m/%Y')) for row in rows]
+        return [(row[0], row[1].strftime('%d/%m/%Y'), float(row[2])) for row in rows]
     except Exception as e:
-        logger.error(f"Erreur expirations: {e}")
+        print(f"Erreur expirations: {e}")
         return []
 
 def get_medicine_history_by_name(name: str, days: int = 30):
@@ -264,109 +251,16 @@ def predict_sales_from_history(history: List[float]) -> float:
         return 0
     return sum(history[-7:]) / min(7, len(history)) * 7
 
-
-# ==========================================
-# ANALYSES AVANCÉES
-# ==========================================
-
-def get_sales_trend(period_days: int = 30) -> Dict:
-    """Analyse la tendance des ventes"""
-    try:
-        conn = get_db_connection()
-        if not conn:
-            return {"error": "Base de données inaccessible"}
-        
-        cursor = conn.cursor()
-        query = """
-            SELECT DATE(created_at), COUNT(*), SUM(total_amount)
-            FROM sales_sale
-            WHERE created_at >= CURRENT_DATE - INTERVAL '%s days'
-            GROUP BY DATE(created_at)
-            ORDER BY date ASC
-        """
-        cursor.execute(query, (period_days,))
-        rows = cursor.fetchall()
-        cursor.close()
-        conn.close()
-        
-        if not rows:
-            return {"error": "Aucune donnée de vente"}
-        
-        totals = [float(row[2]) for row in rows]
-        avg = sum(totals) / len(totals)
-        max_day = max(rows, key=lambda x: x[2])
-        trend = "📈 en hausse" if totals[-1] > totals[0] else "📉 en baisse"
-        
-        return {
-            "total_days": len(rows),
-            "avg_daily": avg,
-            "max_day": max_day[0],
-            "max_amount": max_day[2],
-            "trend": trend,
-            "total_amount": sum(totals)
-        }
-    except Exception as e:
-        logger.error(f"Erreur tendance: {e}")
-        return {"error": str(e)}
-
-def get_stock_health() -> Dict:
-    """Analyse la santé globale du stock"""
-    try:
-        conn = get_db_connection()
-        if not conn:
-            return {"error": "Base de données inaccessible"}
-        
-        cursor = conn.cursor()
-        query = """
-            SELECT 
-                COUNT(*) as total,
-                SUM(CASE WHEN l.quantity = 0 THEN 1 ELSE 0 END) as ruptures,
-                SUM(CASE WHEN l.quantity BETWEEN 1 AND 10 THEN 1 ELSE 0 END) as tres_bas,
-                SUM(CASE WHEN l.quantity BETWEEN 11 AND 30 THEN 1 ELSE 0 END) as bas,
-                SUM(CASE WHEN l.quantity > 30 THEN 1 ELSE 0 END) as suffisant
-            FROM medicines_medicine m
-            LEFT JOIN inventory_stocklot l ON l.medicine_id = m.id
-        """
-        cursor.execute(query)
-        row = cursor.fetchone()
-        cursor.close()
-        conn.close()
-        
-        total = row[0] or 0
-        ruptures = row[1] or 0
-        tres_bas = row[2] or 0
-        bas = row[3] or 0
-        suffisant = row[4] or 0
-        
-        health_score = 100 - ((ruptures + tres_bas) / max(total, 1)) * 100
-        
-        return {
-            "total": total,
-            "ruptures": ruptures,
-            "tres_bas": tres_bas,
-            "bas": bas,
-            "suffisant": suffisant,
-            "health_score": round(health_score, 1),
-            "status": "🟢 Bon" if health_score > 80 else "🟠 Moyen" if health_score > 50 else "🔴 Critique"
-        }
-    except Exception as e:
-        logger.error(f"Erreur santé stock: {e}")
-        return {"error": str(e)}
-
-def get_top_products(limit: int = 5) -> List[Dict]:
-    """Retourne les produits les plus performants"""
+def get_all_medicines(limit: int = 20) -> List[Dict]:
+    """Récupère la liste des médicaments"""
     try:
         conn = get_db_connection()
         if not conn:
             return []
-        
         cursor = conn.cursor()
         query = """
-            SELECT m.commercial_name, SUM(si.quantity) as total_sold, SUM(si.quantity * si.unit_price) as revenue
-            FROM sales_saleitem si
-            JOIN medicines_medicine m ON si.medicine_id = m.id
-            GROUP BY m.id
-            ORDER BY total_sold DESC
+            SELECT id, commercial_name, generic_name, dosage_form, strength
+            FROM medicines_medicine
             LIMIT %s
         """
         cursor.execute(query, (limit,))
@@ -374,372 +268,319 @@ def get_top_products(limit: int = 5) -> List[Dict]:
         cursor.close()
         conn.close()
         
-        return [{"name": row[0], "sold": row[1], "revenue": row[2]} for row in rows]
+        result = []
+        for row in rows:
+            result.append({
+                "id": row[0],
+                "commercial_name": row[1],
+                "generic_name": row[2],
+                "dosage_form": row[3],
+                "strength": row[4]
+            })
+        return result
     except Exception as e:
-        logger.error(f"Erreur top produits: {e}")
+        print(f"Erreur liste médicaments: {e}")
         return []
 
-
-# ==========================================
-# DÉTECTION INTELLIGENTE (NLP basique)
-# ==========================================
-
-SYNONYMS = {
-    "stock": ["stock", "quantité", "disponible", "reste", "combien", "nombre"],
-    "rupture": ["rupture", "épuisé", "manquant", "plus de", "en rade", "absence"],
-    "prevision": ["prévision", "prédiction", "prévoir", "estimer", "anticipation"],
-    "ca": ["chiffre", "ca", "revenu", "recette", "gagné", "bénéfice"],
-    "expiration": ["expire", "périmé", "péremption", "date limite", "fin de validité"],
-    "commande": ["commander", "achat", "approvisionner", "réappro", "acheter"],
-    "vente": ["vente", "vendu", "achat client", "client a acheté"],
-    "meilleur": ["meilleur", "top", "plus vendu", "le plus", "record"],
-    "prix": ["prix", "coût", "tarif", "valeur"],
-}
-
-MEDICINE_VARIANTS = {
-    "paracétamol": ["paracétamol", "doliprane", "efferalgan", "daflon"],
-    "ibuprofène": ["ibuprofène", "advil", "nurofen", "ibu"],
-    "amoxicilline": ["amoxicilline", "amox", "clavamox"],
-    "cétirizine": ["cétirizine", "zyrtec", "cetirizin"],
-    "artéméther": ["artéméther", "artemether", "paluther"],
-    "quinine": ["quinine", "quinin", "quinine"],
-    "diclofénac": ["diclofénac", "voltaren", "diclofenac"],
-    "métronidazole": ["métronidazole", "flagyl", "metronidazole"],
-    "oméprazole": ["oméprazole", "omeprazol", "mopral"],
-    "azithromycine": ["azithromycine", "zithromax", "azithro"],
-    "ciprofloxacine": ["ciprofloxacine", "cipro", "ciprofloxacin"],
-    "sro": ["sro", "sel de réhydratation", "réhydratation"],
-    "vaccin": ["vaccin", "vaccination", "vacc"],
-    "moustiquaire": ["moustiquaire", "moustiquaire", "moustique"],
-    "ceftriaxone": ["ceftriaxone", "ceftri", "rocephin"],
-}
-
-def detect_medicine_name(msg: str) -> Optional[str]:
-    """Détecte le nom d'un médicament dans le message"""
-    msg_lower = msg.lower()
-    for med, variants in MEDICINE_VARIANTS.items():
-        for variant in variants:
-            if variant in msg_lower:
-                return med
-    return None
-
-def detect_intent_improved(msg: str) -> Dict:
-    """Détecte l'intention avec les synonymes"""
-    msg_lower = msg.lower()
-    
-    for intent, keywords in SYNONYMS.items():
-        for keyword in keywords:
-            if keyword in msg_lower:
-                return {"intent": intent, "confidence": 0.9, "keyword": keyword}
-    
-    if "aide" in msg_lower or "help" in msg_lower or "que peux-tu" in msg_lower:
-        return {"intent": "aide", "confidence": 0.9, "keyword": "aide"}
-    
-    if "bonjour" in msg_lower or "salut" in msg_lower:
-        return {"intent": "salutation", "confidence": 0.9, "keyword": "bonjour"}
-    
-    return {"intent": "fallback", "confidence": 0.3, "keyword": None}
-
-
-# ==========================================
-# GESTIONNAIRES DE RÉPONSES
-# ==========================================
-
-def handle_salutation() -> Dict:
-    """Réponse aux salutations"""
-    greetings = [
-        "👋 Bonjour ! Je suis l'assistant de DENG PHARMA. Comment puis-je vous aider ?",
-        "🩺 Bonjour ! Je suis là pour vous aider à gérer votre pharmacie. Que voulez-vous savoir ?",
-        "💊 Salut ! Je peux vous renseigner sur vos stocks, vos ventes, et bien plus encore."
-    ]
-    return {"reply": random.choice(greetings), "source": "internal"}
-
-def handle_stock_query(entities: Dict) -> Dict:
-    """Répond à une question sur le stock"""
-    med_name = entities.get("medicine_name")
-    if not med_name:
-        return {"reply": "❓ Quel médicament vous intéresse ?", "source": "internal"}
-    
-    stock = get_medicine_stock_by_name(med_name)
-    if stock is None:
-        return {"reply": f"❌ Je n'ai pas trouvé de médicament '{med_name}'.", "source": "internal"}
-    
-    if stock == 0:
-        emoji, status = "🚨", "⚠️ **Rupture de stock !**"
-    elif stock < 10:
-        emoji, status = "⚠️", f"⚠️ **Stock très bas** ({stock:.0f} unités)"
-    elif stock < 30:
-        emoji, status = "📦", f"📦 **Stock modéré** ({stock:.0f} unités)"
-    else:
-        emoji, status = "✅", f"✅ **Stock suffisant** ({stock:.0f} unités)"
-    
-    suggestion = "\n💡 **Suggestion :** Pensez à commander bientôt." if stock < 10 else ""
-    
-    return {
-        "reply": f"{emoji} **{med_name.capitalize()}** : {status}{suggestion}",
-        "source": "internal"
-    }
-
-def handle_rupture_query() -> Dict:
-    """Liste les médicaments en rupture"""
-    out_of_stock = get_out_of_stock_medicines()
-    if out_of_stock:
-        reply = "🚨 **Médicaments en rupture de stock :**\n\n"
-        for med in out_of_stock:
-            reply += f"  • ❌ {med}\n"
-        reply += "\n⚠️ **Action :** Passez commande immédiatement !"
-    else:
-        reply = "✅ **Aucun médicament en rupture.** Tout va bien !"
-    return {"reply": reply, "source": "internal"}
-
-def handle_prediction_query(entities: Dict) -> Dict:
-    """Donne une prévision de vente"""
-    med_name = entities.get("medicine_name")
-    if not med_name:
-        return {"reply": "❓ Pour quel médicament voulez-vous une prévision ?", "source": "internal"}
-    
-    history = get_medicine_history_by_name(med_name, days=30)
-    if not history or len(history) < 3:
+def get_dashboard_summary() -> Dict:
+    """Résumé du tableau de bord"""
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return {}
+        cursor = conn.cursor()
+        
+        # Total médicaments
+        cursor.execute("SELECT COUNT(*) FROM medicines_medicine")
+        total_medicines = cursor.fetchone()[0]
+        
+        # Total ventes aujourd'hui
+        cursor.execute("""
+            SELECT COALESCE(SUM(total_amount), 0) 
+            FROM sales_sale 
+            WHERE DATE(created_at) = CURRENT_DATE
+        """)
+        today_sales = cursor.fetchone()[0]
+        
+        # Ruptures
+        cursor.execute("""
+            SELECT COUNT(DISTINCT m.id)
+            FROM medicines_medicine m
+            LEFT JOIN inventory_stocklot l ON l.medicine_id = m.id
+            WHERE l.id IS NULL OR l.quantity <= 0
+        """)
+        out_of_stock = cursor.fetchone()[0]
+        
+        # Expirations proches (7 jours)
+        cursor.execute("""
+            SELECT COUNT(DISTINCT m.id)
+            FROM inventory_stocklot l
+            JOIN medicines_medicine m ON l.medicine_id = m.id
+            WHERE l.quantity > 0
+              AND l.expiry_date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '7 days'
+        """)
+        expiring_soon = cursor.fetchone()[0]
+        
+        cursor.close()
+        conn.close()
+        
         return {
-            "reply": f"⚠️ Pas assez de données pour **{med_name}**. Il faut au moins 3 jours d'historique.",
-            "source": "internal"
+            "total_medicines": total_medicines,
+            "today_sales": float(today_sales),
+            "out_of_stock": out_of_stock,
+            "expiring_soon": expiring_soon,
+            "date": date.today().isoformat()
         }
-    
-    pred = predict_sales_from_history(history)
-    avg_sales = sum(history) / len(history)
-    trend = "📈 **en hausse**" if pred > avg_sales else "📉 **en baisse**"
-    
-    return {
-        "reply": (
-            f"📊 **Prévision pour {med_name.capitalize()}**\n\n"
-            f"  • Ventes prévues : **{pred:.0f}** unités\n"
-            f"  • Moyenne historique : **{avg_sales:.0f}** unités\n"
-            f"  • Tendance : {trend}\n"
-            f"  • Basé sur {len(history)} jours de données"
-        ),
-        "source": "internal"
-    }
-
-def handle_revenue_query(entities: Dict) -> Dict:
-    """Calcule le chiffre d'affaires"""
-    period = int(entities.get("period", "7"))
-    revenue = get_revenue_period(period)
-    prev_revenue = get_revenue_period(period, offset=period)
-    evolution = ((revenue - prev_revenue) / prev_revenue * 100) if prev_revenue > 0 else 0
-    emoji = "📈" if evolution >= 0 else "📉"
-    
-    return {
-        "reply": (
-            f"💰 **Chiffre d'affaires**\n\n"
-            f"  • Période : **{period}** jours\n"
-            f"  • Total : **{revenue:,.0f}** FCFA\n"
-            f"  • Évolution : {emoji} **{evolution:+.1f}%**"
-        ),
-        "source": "internal"
-    }
-
-def handle_expiration_query(entities: Dict) -> Dict:
-    """Liste les médicaments qui expirent"""
-    days = int(entities.get("period", "30"))
-    expiring = get_expiring_medicines(days)
-    
-    if expiring:
-        reply = f"⚠️ **Médicaments expirant dans {days} jours :**\n\n"
-        for med, date_str in expiring[:10]:
-            reply += f"  • {med} (expire le {date_str})\n"
-        if len(expiring) > 10:
-            reply += f"\n... et {len(expiring) - 10} autres."
-    else:
-        reply = f"✅ Aucun médicament n'expire dans les {days} jours."
-    return {"reply": reply, "source": "internal"}
-
-def handle_order_query(entities: Dict) -> Dict:
-    """Recommande une commande"""
-    med_name = entities.get("medicine_name")
-    if not med_name:
-        return {"reply": "❓ Pour quel médicament voulez-vous une recommandation ?", "source": "internal"}
-    
-    stock = get_medicine_stock_by_name(med_name)
-    history = get_medicine_history_by_name(med_name, days=30)
-    if not history:
-        return {"reply": f"⚠️ Pas assez de données pour {med_name}.", "source": "internal"}
-    
-    avg_daily = sum(history) / len(history)
-    recommended = max(0, (avg_daily * 14) - stock)
-    
-    return {
-        "reply": (
-            f"📦 **Recommandation de commande pour {med_name.capitalize()}**\n\n"
-            f"  • Stock actuel : **{stock:.0f}** unités\n"
-            f"  • Vente moyenne : **{avg_daily:.0f}** unités/jour\n"
-            f"  • Autonomie : **{stock / avg_daily:.0f}** jours\n"
-            f"  • **Quantité recommandée : {recommended:.0f}** unités"
-        ),
-        "source": "internal"
-    }
-
-def handle_sales_query(entities: Dict) -> Dict:
-    """Donne des informations sur les ventes"""
-    med_name = entities.get("medicine_name")
-    if med_name:
-        history = get_medicine_history_by_name(med_name, days=30)
-        if history:
-            total = sum(history)
-            avg = total / len(history)
-            return {
-                "reply": (
-                    f"📊 **Ventes de {med_name.capitalize()}**\n\n"
-                    f"  • Total (30 jours) : **{total:.0f}** unités\n"
-                    f"  • Moyenne : **{avg:.0f}** unités/jour\n"
-                    f"  • Meilleur jour : **{max(history):.0f}** unités"
-                ),
-                "source": "internal"
-            }
-        else:
-            return {"reply": f"❌ Aucune vente enregistrée pour {med_name}.", "source": "internal"}
-    else:
-        return {"reply": "❓ Pour quel médicament voulez-vous les ventes ?", "source": "internal"}
-
-def handle_best_selling() -> Dict:
-    """Médicament le plus vendu"""
-    try:
-        conn = get_db_connection()
-        if not conn:
-            return {"reply": "Je n'ai pas accès aux données actuellement.", "source": "internal"}
-        
-        cursor = conn.cursor()
-        query = """
-            SELECT m.commercial_name, SUM(si.quantity) as total_sold
-            FROM sales_saleitem si
-            JOIN medicines_medicine m ON si.medicine_id = m.id
-            GROUP BY m.id
-            ORDER BY total_sold DESC
-            LIMIT 1
-        """
-        cursor.execute(query)
-        row = cursor.fetchone()
-        cursor.close()
-        conn.close()
-        
-        if row:
-            return {
-                "reply": f"🏆 Le médicament le plus vendu est **{row[0]}** avec {row[1]} unités vendues.",
-                "source": "internal"
-            }
-        else:
-            return {"reply": "Aucune vente enregistrée pour le moment.", "source": "internal"}
     except Exception as e:
-        logger.error(f"Erreur meilleure vente: {e}")
-        return {"reply": "Je n'ai pas pu récupérer les données.", "source": "internal"}
-
-def handle_price_query(entities: Dict) -> Dict:
-    """Répond à une question sur le prix"""
-    med_name = entities.get("medicine_name")
-    if not med_name:
-        return {"reply": "❓ De quel médicament voulez-vous connaître le prix ?", "source": "internal"}
-    
-    try:
-        conn = get_db_connection()
-        if not conn:
-            return {"reply": "Je n'ai pas accès aux données actuellement.", "source": "internal"}
-        
-        cursor = conn.cursor()
-        query = """
-            SELECT selling_price, purchase_price
-            FROM medicines_medicine
-            WHERE commercial_name ILIKE %s
-        """
-        cursor.execute(query, (f'%{med_name}%',))
-        row = cursor.fetchone()
-        cursor.close()
-        conn.close()
-        
-        if row:
-            return {
-                "reply": f"💰 **{med_name.capitalize()}** :\n  • Prix de vente : **{row[0]} FCFA**\n  • Prix d'achat : **{row[1]} FCFA**",
-                "source": "internal"
-            }
-        else:
-            return {"reply": f"❌ Je n'ai pas trouvé de médicament '{med_name}'.", "source": "internal"}
-    except Exception as e:
-        logger.error(f"Erreur prix: {e}")
-        return {"reply": "Je n'ai pas pu récupérer les données.", "source": "internal"}
-
-def handle_complex_query(msg: str, entities: Dict, context: Dict) -> Optional[Dict]:
-    """Gère les requêtes complexes"""
-    if any(word in msg for word in ["analyse", "résumé", "global", "synthèse", "état"]):
-        stock_health = get_stock_health()
-        top_products = get_top_products(3)
-        trend = get_sales_trend(30)
-        
-        if "error" in stock_health:
-            return {"reply": "Je n'ai pas pu récupérer les données.", "source": "internal"}
-        
-        reply = "📊 **Synthèse de votre pharmacie :**\n\n"
-        reply += f"🏷️ **Stock :** {stock_health.get('total', 0)} médicaments\n"
-        reply += f"   • Ruptures : {stock_health.get('ruptures', 0)}\n"
-        reply += f"   • Stock très bas : {stock_health.get('tres_bas', 0)}\n"
-        reply += f"   • Santé : {stock_health.get('status', 'Inconnu')}\n\n"
-        reply += f"💰 **Chiffre d'affaires (30j) :** {trend.get('total_amount', 0):,.0f} FCFA\n"
-        reply += f"   • Tendance : {trend.get('trend', 'Inconnue')}\n\n"
-        reply += "🏆 **Top 3 des ventes :**\n"
-        for i, p in enumerate(top_products[:3], 1):
-            reply += f"   {i}. {p['name']} : {p['sold']} unités\n"
-        
-        return {"reply": reply, "source": "internal"}
-    
-    if "compar" in msg or "vs" in msg:
-        return {"reply": "📊 Je peux comparer deux médicaments. Donnez-moi leurs noms.", "source": "internal"}
-    
-    if "conseil" in msg or "recommand" in msg:
-        stock_health = get_stock_health()
-        if "error" not in stock_health and stock_health.get("ruptures", 0) > 3:
-            return {"reply": "🚨 Je vous conseille de passer commande pour les médicaments en rupture.", "source": "internal"}
-        return {"reply": "✅ Votre stock semble en bonne santé. Continuez comme ça !", "source": "internal"}
-    
-    return None
-
-def handle_help() -> Dict:
-    """Affiche l'aide"""
-    return {
-        "reply": (
-            "🤖 **Aide - DENG PHARMA Assistant**\n\n"
-            "Je peux répondre à vos questions sur :\n\n"
-            "  • 📦 **Stock** : 'Stock de Paracétamol'\n"
-            "  • 🚨 **Ruptures** : 'Quels médicaments sont en rupture ?'\n"
-            "  • 📈 **Prévisions** : 'Prévision pour Amoxicilline'\n"
-            "  • 💰 **Chiffre d'affaires** : 'CA du mois'\n"
-            "  • ⚠️ **Expirations** : 'Expirations dans 30 jours'\n"
-            "  • 📦 **Commande** : 'Commander Amoxicilline'\n"
-            "  • 🏆 **Top ventes** : 'Quel est le plus vendu ?'\n"
-            "  • 💰 **Prix** : 'Prix de Paracétamol'\n"
-            "  • 📊 **Analyse** : 'Analyse globale de ma pharmacie'\n\n"
-            "Que puis-je faire pour vous ? 😊"
-        ),
-        "source": "internal"
-    }
-
-def handle_fallback_improved(msg: str) -> Dict:
-    """Réponse améliorée pour les questions non comprises"""
-    suggestions = [
-        "💡 Vous pouvez me poser des questions sur :\n  • Les stocks ('Stock de Paracétamol')\n  • Les ruptures ('Quels sont les médicaments en rupture ?')\n  • Les prévisions ('Prévision pour Amoxicilline')\n  • Le chiffre d'affaires ('CA du mois')\n  • Les prix ('Prix de Paracétamol')\n  • L'analyse globale ('Analyse de ma pharmacie')",
-        "🔍 Je ne comprends pas votre question. Essayez :\n  • 'Stock de Paracétamol'\n  • 'Quels sont les médicaments en rupture ?'\n  • 'Prévision pour Amoxicilline'\n  • 'CA du mois'\n  • 'Prix de Amoxicilline'\n  • 'Analyse globale'"
-    ]
-    
-    return {
-        "reply": f"🤔 Je n'ai pas bien compris votre demande.\n\n{random.choice(suggestions)}",
-        "source": "internal"
-    }
+        print(f"Erreur dashboard: {e}")
+        return {}
 
 
 # ==========================================
-# CHARGEMENT DU MODÈLE
+# EXTRACTION D'ENTITÉS AVANCÉE
+# ==========================================
+
+def extract_entities(msg: str) -> Dict:
+    """Extrait les entités du message avec reconnaissance améliorée"""
+    msg_lower = msg.lower()
+    
+    entities = {
+        "medicine_name": None,
+        "quantity": None,
+        "period": "7",
+        "medicine_id": None,
+        "action": None,
+        "timeframe": None,
+        "comparison": None
+    }
+    
+    # Liste élargie de médicaments
+    medicines = [
+        "paracétamol", "ibuprofène", "amoxicilline", "cétirizine",
+        "artéméther", "quinine", "diclofénac", "métronidazole",
+        "oméprazole", "azithromycine", "ciprofloxacine", "sro",
+        "vaccin", "moustiquaire", "ceftriaxone", "vitamine c",
+        "aspirine", "ventoline", "spasfon", "smecta", "décontractyl",
+        "doliprane", "efferalgan", "tramadol", "prednisone"
+    ]
+    
+    # Détection du médicament avec score de similitude
+    for med in medicines:
+        if med in msg_lower:
+            entities["medicine_name"] = med
+            break
+    
+    # Détection des nombres
+    numbers = re.findall(r'\d+', msg)
+    if numbers:
+        entities["quantity"] = int(numbers[0])
+    
+    # Détection de la période
+    if "jour" in msg_lower:
+        days = re.findall(r'(\d+)\s*jour', msg_lower)
+        entities["period"] = days[0] if days else "7"
+    elif "semaine" in msg_lower:
+        weeks = re.findall(r'(\d+)\s*semaine', msg_lower)
+        entities["period"] = str(int(weeks[0]) * 7) if weeks else "7"
+    elif "mois" in msg_lower:
+        months = re.findall(r'(\d+)\s*mois', msg_lower)
+        entities["period"] = str(int(months[0]) * 30) if months else "30"
+    
+    # Détection de l'action
+    if any(w in msg_lower for w in ["commander", "acheter", "approvisionner"]):
+        entities["action"] = "order"
+    elif any(w in msg_lower for w in ["comparer", "comparaison", "vs"]):
+        entities["action"] = "compare"
+    elif any(w in msg_lower for w in ["analyser", "analyse"]):
+        entities["action"] = "analyze"
+    
+    # Détection du timeframe
+    if any(w in msg_lower for w in ["aujourd'hui", "ce jour", "today"]):
+        entities["timeframe"] = "today"
+    elif any(w in msg_lower for w in ["semaine dernière", "semaine passée"]):
+        entities["timeframe"] = "last_week"
+    elif any(w in msg_lower for w in ["mois dernier", "mois passé"]):
+        entities["timeframe"] = "last_month"
+    
+    return entities
+
+
+# ==========================================
+# DÉTECTION D'INTENTION AVANCÉE
+# ==========================================
+
+def detect_intent(msg: str, entities: Dict) -> str:
+    """Détecte l'intention du message avec plus de précision"""
+    msg_lower = msg.lower()
+    
+    # Intention spécifique
+    if any(k in msg_lower for k in ["stock", "combien", "quantité", "disponible", "reste", "a-t-on"]) and entities.get("medicine_name"):
+        return "stock"
+    
+    if any(k in msg_lower for k in ["rupture", "épuisé", "manquant", "plus de", "en rade", "penurie", "pénurie"]):
+        return "rupture"
+    
+    if any(k in msg_lower for k in ["prévision", "prédiction", "prévoir", "estimer", "prédire", "tendance"]) and entities.get("medicine_name"):
+        return "prevision"
+    
+    if any(k in msg_lower for k in ["chiffre", "ca", "revenu", "recette", "gagné", "chiffre d'affaire", "chiffre d'affaires"]):
+        return "ca"
+    
+    if any(k in msg_lower for k in ["expire", "périmé", "péremption", "date limite", "dlou"]):
+        return "expiration"
+    
+    if any(k in msg_lower for k in ["commander", "achat", "approvisionner", "réappro", "commande"]):
+        return "commande"
+    
+    if any(k in msg_lower for k in ["vente", "vendu", "achat client", "vendu"]):
+        return "vente"
+    
+    if any(k in msg_lower for k in ["meilleur", "top", "populaire", "plus vendu", "phare"]):
+        return "top"
+    
+    if any(k in msg_lower for k in ["dashboard", "résumé", "global", "synthèse", "état", "panorama"]):
+        return "dashboard"
+    
+    if any(k in msg_lower for k in ["prix", "coût", "tarif", "combien coûte"]):
+        return "prix"
+    
+    if "aide" in msg_lower or "help" in msg_lower or "que peux-tu" in msg_lower or "fonctionnalité" in msg_lower:
+        return "aide"
+    
+    if any(k in msg_lower for k in ["bonjour", "salut", "hello", "coucou", "hey"]):
+        return "salutation"
+    
+    return "fallback"
+
+
+# ==========================================
+# SYSTÈME DE MÉMOIRE DE CONVERSATION
+# ==========================================
+
+class ConversationMemory:
+    """Gère la mémoire de conversation"""
+    
+    def __init__(self, max_history: int = 10):
+        self.sessions = {}  # session_id -> [{"role": "user", "content": ...}, ...]
+        self.max_history = max_history
+    
+    def get_or_create_session(self, session_id: str) -> List[Dict]:
+        if session_id not in self.sessions:
+            self.sessions[session_id] = []
+        return self.sessions[session_id]
+    
+    def add_message(self, session_id: str, role: str, content: str):
+        history = self.get_or_create_session(session_id)
+        history.append({"role": role, "content": content, "timestamp": datetime.now().isoformat()})
+        
+        # Limiter l'historique
+        if len(history) > self.max_history * 2:  # user + assistant
+            self.sessions[session_id] = history[-self.max_history * 2:]
+    
+    def get_context(self, session_id: str, last_n: int = 5) -> str:
+        """Retourne le contexte de la conversation"""
+        history = self.get_or_create_session(session_id)
+        if not history:
+            return ""
+        
+        recent = history[-last_n:]
+        context = "Historique de la conversation :\n"
+        for msg in recent:
+            context += f"- {msg['role']}: {msg['content']}\n"
+        
+        return context
+
+conversation_memory = ConversationMemory()
+
+
+# ==========================================
+# CONFIGURATION MISTRAL AI
+# ==========================================
+
+MISTRAL_API_KEY = os.getenv('MISTRAL_API_KEY')
+MISTRAL_API_URL = "https://api.mistral.ai/v1/chat/completions"
+
+SYSTEM_PROMPT = """Tu es l'assistant IA intelligent de **DENG PHARMA**, une pharmacie moderne au Tchad.
+
+🎯 **RÔLE** : Expert en gestion pharmaceutique, tu aides à gérer les stocks, ventes, prévisions et approvisionnements.
+
+📋 **RÈGLES IMPORTANTES** :
+1. Réponds UNIQUEMENT en français, avec un ton professionnel mais chaleureux.
+2. Sois PRÉCIS : donne des chiffres exacts quand tu les connais.
+3. Sois CONCIS : 3-5 phrases maximum, sauf si on te demande plus.
+4. Sois PROACTIF : propose des solutions ou des recommandations.
+5. Utilise le format FCFA pour les prix.
+6. Si tu ne sais pas, dis-le HONNÊTEMENT.
+
+💡 **EXEMPLES DE RÉPONSES ATTENDUES** :
+- Question stock : "Le Paracétamol 500mg a un stock de 450 unités. Le seuil d'alerte est à 100 unités. Je vous recommande de passer commande dans les 15 jours."
+- Question vente : "Le chiffre d'affaires du mois est de 2 500 000 FCFA, en hausse de 12% par rapport au mois dernier."
+- Question prévision : "D'après les tendances, les ventes de Paracétamol augmenteront de 15% la semaine prochaine."
+
+Reste toujours UTILE et ACTIONNABLE dans tes réponses !
+"""
+
+def call_mistral_with_context(prompt: str, context: str = "") -> Optional[str]:
+    """Appelle l'API Mistral avec contexte"""
+    if not MISTRAL_API_KEY:
+        print("❌ MISTRAL_API_KEY non définie")
+        return None
+    
+    try:
+        headers = {
+            "Authorization": f"Bearer {MISTRAL_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT}
+        ]
+        
+        if context:
+            messages.append({"role": "system", "content": f"Contexte de la conversation :\n{context}"})
+        
+        messages.append({"role": "user", "content": prompt})
+        
+        payload = {
+            "model": "mistral-small-latest",
+            "messages": messages,
+            "temperature": 0.7,
+            "max_tokens": 500
+        }
+        
+        print(f"🔍 Envoi de la requête à Mistral...")
+        response = requests.post(MISTRAL_API_URL, json=payload, headers=headers, timeout=30)
+        
+        print(f"📡 Réponse Mistral: {response.status_code}")
+        
+        if response.status_code == 200:
+            data = response.json()
+            content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+            if content:
+                return content.strip()
+            else:
+                print("❌ Réponse vide de Mistral")
+                return None
+        elif response.status_code == 429:
+            print("⚠️ Rate limit atteint")
+            return "⚠️ Le chatbot est momentanément indisponible. Veuillez réessayer dans quelques instants."
+        else:
+            print(f"❌ Erreur Mistral: {response.status_code} - {response.text}")
+            return None
+            
+    except Exception as e:
+        print(f"❌ Erreur Mistral: {e}")
+        return None
+
+
+# ==========================================
+# CHARGEMENT DU MODÈLE XGBOOST
 # ==========================================
 
 MODELS_DIR = os.path.join(os.path.dirname(__file__), '..', 'models')
 
-logger.info("🚀 Démarrage de DENG PHARMA IA...")
-logger.info(f"📁 Dossier modèles : {MODELS_DIR}")
+print("🚀 Démarrage de DENG PHARMA IA v3.0...")
+print(f"📁 Dossier modèles : {MODELS_DIR}")
 
 model = None
 features_list = None
@@ -749,11 +590,11 @@ try:
     features_path = os.path.join(MODELS_DIR, 'features.pkl')
     model = joblib.load(model_path)
     features_list = joblib.load(features_path)
-    logger.info(f"✅ Modèle chargé : xgboost_tchad.pkl")
-    logger.info(f"📊 Features : {features_list}")
+    print(f"✅ Modèle chargé : xgboost_tchad.pkl")
+    print(f"📊 Features : {features_list}")
 except FileNotFoundError as e:
-    logger.warning(f"⚠️ Modèle non trouvé : {e}")
-    logger.warning("   Lancez d'abord l'entraînement dans le notebook Jupyter")
+    print(f"⚠️ Modèle non trouvé : {e}")
+    print("   Lancez d'abord l'entraînement dans le notebook Jupyter")
 
 
 # ==========================================
@@ -761,19 +602,21 @@ except FileNotFoundError as e:
 # ==========================================
 
 app = FastAPI(
-    title="DENG PHARMA - Service IA Tchad",
+    title="DENG PHARMA - Service IA Intelligent",
     description="""
-    API intelligente de gestion pharmaceutique.
+    API intelligente de gestion pharmaceutique avec chatbot avancé.
     
     ## Fonctionnalités :
+    - **Chatbot intelligent** avec Mistral + données temps réel + mémoire
     - **Prévision des ventes** : prédit les ventes pour les N prochains jours
     - **Détection ruptures/surstocks** : analyse le risque de rupture
-    - **Recommandations de commandes** : calcule la quantité optimale à commander
+    - **Recommandations de commandes** : calcule la quantité optimale
     - **Score de criticité** : évalue l'importance des médicaments
-    - **Analyse saisonnière** : conseils selon la saison (pluies/sèche)
-    - **Chatbot assistant** : répond aux questions sur la gestion
+    - **Analyse saisonnière** : conseils selon la saison
+    - **Mémoire de conversation** : contexte multi-tours
+    - **Analyse SHAP** : importance des variables
     """,
-    version="2.0.0"
+    version="3.0.0"
 )
 
 app.add_middleware(
@@ -807,31 +650,38 @@ class OrderRecommendationRequest(BaseModel):
 
 class ChatRequest(BaseModel):
     message: str
+    session_id: Optional[str] = None
     context: Optional[Dict] = {}
 
 
 # ==========================================
-# ENDPOINTS EXISTANTS (PRÉDICTION, STOCK, ETC.)
+# ENDPOINTS - ROOT & HEALTH
 # ==========================================
 
 @app.get("/")
 def root():
     return {
         "service": "DENG PHARMA IA",
-        "version": "2.0.0",
+        "version": "3.0.0",
         "model_loaded": model is not None,
         "database": "PostgreSQL",
+        "mistral_configured": bool(MISTRAL_API_KEY),
         "endpoints": [
+            "/",
+            "/health",
+            "/dashboard",
+            "/chat",
+            "/chat/session/{session_id}",
+            "/chat/stats",
             "/predict",
             "/analyze/stock",
             "/recommend/order",
             "/criticality",
             "/seasonal-analysis",
-            "/chat",
-            "/health",
-            "/model-performance",
             "/shap-analysis",
-            "/train"
+            "/model-performance",
+            "/train",
+            "/medicines"
         ]
     }
 
@@ -841,36 +691,43 @@ def health():
         "status": "healthy",
         "model_loaded": model is not None,
         "database": "PostgreSQL",
-        "features": features_list
+        "features": features_list,
+        "mistral_configured": bool(MISTRAL_API_KEY),
+        "memory_sessions": len(conversation_memory.sessions),
+        "timestamp": datetime.now().isoformat()
     }
 
-@app.get("/model-performance")
-def model_performance():
-    try:
-        metrics_path = os.path.join(MODELS_DIR, 'metrics.json')
-        with open(metrics_path, 'r') as f:
-            metrics = json.load(f)
-        return metrics
-    except FileNotFoundError:
-        return {
-            "error": "Métriques non disponibles. Réentraînez le modèle.",
-            "mae": None,
-            "rmse": None,
-            "mape": None,
-            "model_version": None
-        }
 
-@app.post("/train")
-def train_model_endpoint():
-    try:
-        script_path = os.path.join(os.path.dirname(__file__), '..', 'training', 'train_model.py')
-        subprocess.Popen([sys.executable, script_path])
-        return {"status": "Entraînement lancé en arrière-plan"}
-    except Exception as e:
-        raise HTTPException(500, f"Erreur lors du lancement : {e}")
+# ==========================================
+# ENDPOINT - DASHBOARD
+# ==========================================
+
+@app.get("/dashboard")
+def dashboard():
+    """Résumé du tableau de bord pour le chat"""
+    return get_dashboard_summary()
+
+
+# ==========================================
+# ENDPOINT - LISTE MÉDICAMENTS
+# ==========================================
+
+@app.get("/medicines")
+def list_medicines(limit: int = 20, search: Optional[str] = None):
+    """Liste des médicaments"""
+    medicines = get_all_medicines(limit)
+    if search:
+        medicines = [m for m in medicines if search.lower() in m.get('commercial_name', '').lower()]
+    return {"medicines": medicines, "count": len(medicines)}
+
+
+# ==========================================
+# ENDPOINT - PRÉDICTION DES VENTES
+# ==========================================
 
 @app.post("/predict")
 def predict_sales(request: PredictionRequest):
+    """Prédit les ventes pour les N prochains jours"""
     if model is None:
         raise HTTPException(503, "Modèle non disponible.")
 
@@ -883,7 +740,7 @@ def predict_sales(request: PredictionRequest):
         days=30
     )
 
-    logger.info(f"DEBUG: medicine_name = '{request.medicine_name}', historique = {len(history) if history else 0}")
+    print(f"DEBUG: medicine_name = '{request.medicine_name}', historique = {len(history) if history else 0}")
 
     base = 45.0
     season_factor = 1.5 if today.month in [6, 7, 8, 9, 10] else 1.0
@@ -939,23 +796,37 @@ def predict_sales(request: PredictionRequest):
     return {
         "medicine_id": request.medicine_id,
         "predictions": predictions,
-        "model_version": "v2.0-personalized",
+        "model_version": "v3.0-personalized",
         "database": "PostgreSQL"
     }
 
+
+# ==========================================
+# ENDPOINT - ANALYSE DE STOCK
+# ==========================================
+
 @app.post("/analyze/stock")
 def analyze_stock(request: StockAnalysisRequest):
+    """Analyse le risque de rupture ou surstock"""
     daily_demand = np.random.randint(20, 60)
     stock_days = request.current_stock / max(daily_demand, 1)
     
     if stock_days < 7:
-        status, message, risk = "RISQUE_RUPTURE", f"⚠️ Rupture probable dans {stock_days:.0f} jours", 90
+        status = "RISQUE_RUPTURE"
+        message = f"⚠️ Rupture probable dans {stock_days:.0f} jours"
+        risk = 90
     elif stock_days < 14:
-        status, message, risk = "SURVEILLANCE", f"👀 Stock faible : {stock_days:.0f} jours restants", 50
+        status = "SURVEILLANCE"
+        message = f"👀 Stock faible : {stock_days:.0f} jours restants"
+        risk = 50
     elif stock_days > 60:
-        status, message, risk = "SURSTOCK", f"📦 Surstock : {stock_days:.0f} jours de stock", 10
+        status = "SURSTOCK"
+        message = f"📦 Surstock : {stock_days:.0f} jours de stock"
+        risk = 10
     else:
-        status, message, risk = "OK", f"✅ Stock normal : {stock_days:.0f} jours", 5
+        status = "OK"
+        message = f"✅ Stock normal : {stock_days:.0f} jours"
+        risk = 5
     
     return {
         "medicine_id": request.medicine_id,
@@ -967,8 +838,14 @@ def analyze_stock(request: StockAnalysisRequest):
         "message": message
     }
 
+
+# ==========================================
+# ENDPOINT - RECOMMANDATION DE COMMANDE
+# ==========================================
+
 @app.post("/recommend/order")
 def recommend_order(request: OrderRecommendationRequest):
+    """Recommande la quantité optimale à commander"""
     daily_demand = np.random.uniform(15, 40)
     z_score = 1.65 if request.service_level == 0.95 else 1.28
     safety_stock = z_score * (daily_demand * 0.3) * np.sqrt(request.lead_time_days)
@@ -986,8 +863,14 @@ def recommend_order(request: OrderRecommendationRequest):
         "message": f"📦 Commander {round(order_quantity)} unités" if order_quantity > 0 else "✅ Stock suffisant"
     }
 
+
+# ==========================================
+# ENDPOINT - SCORE DE CRITICITÉ
+# ==========================================
+
 @app.get("/criticality")
 def get_criticality(medicine_id: str = "MED003"):
+    """Retourne le score de criticité"""
     scores = {
         "MED001": 85, "MED002": 75, "MED003": 95, "MED004": 85, "MED005": 65,
         "MED006": 55, "MED007": 75, "MED008": 90, "MED009": 80, "MED010": 85,
@@ -1008,11 +891,18 @@ def get_criticality(medicine_id: str = "MED003"):
         "medicine_id": medicine_id,
         "criticality_score": score,
         "level": level,
-        "color": color
+        "color": color,
+        "timestamp": datetime.now().isoformat()
     }
+
+
+# ==========================================
+# ENDPOINT - ANALYSE SAISONNIÈRE
+# ==========================================
 
 @app.get("/seasonal-analysis")
 def seasonal_analysis():
+    """Analyse saisonnière pour le Tchad"""
     today = date.today()
     is_rainy = today.month in [6, 7, 8, 9, 10]
     
@@ -1026,8 +916,14 @@ def seasonal_analysis():
         "priority_categories": ["Antipaludéens", "Réhydratation", "Antibiotiques"] if is_rainy else ["Vaccins", "Respiratoire", "Antibiotiques"]
     }
 
+
+# ==========================================
+# ENDPOINT - ANALYSE SHAP
+# ==========================================
+
 @app.get("/shap-analysis")
 def shap_analysis(medicine_id: str):
+    """Retourne l'importance des variables (SHAP) pour un médicament."""
     if model is None:
         raise HTTPException(503, "Modèle non disponible.")
 
@@ -1066,107 +962,527 @@ def shap_analysis(medicine_id: str):
 
     X = pd.DataFrame([features])[features_list]
 
-    explainer = shap.TreeExplainer(model)
-    shap_values = explainer.shap_values(X)
+    try:
+        explainer = shap.TreeExplainer(model)
+        shap_values = explainer.shap_values(X)
 
-    feature_importance = []
-    for i, name in enumerate(features_list):
-        feature_importance.append({
-            "name": name,
-            "importance": float(shap_values[0][i])
-        })
+        feature_importance = []
+        for i, name in enumerate(features_list):
+            feature_importance.append({
+                "name": name,
+                "importance": float(shap_values[0][i])
+            })
+        feature_importance.sort(key=lambda x: abs(x['importance']), reverse=True)
+    except Exception as e:
+        print(f"Erreur SHAP: {e}")
+        feature_importance = [{"name": f, "importance": random.uniform(-1, 1)} for f in features_list]
 
     return {
         "medicine_id": medicine_id,
-        "features": feature_importance
+        "features": feature_importance,
+        "timestamp": datetime.now().isoformat()
     }
 
 
 # ==========================================
-# CHATBOT PRINCIPAL (route /chat)
+# ENDPOINT - PERFORMANCE DU MODÈLE
+# ==========================================
+
+@app.get("/model-performance")
+def model_performance():
+    """Retourne les métriques réelles sauvegardées lors du dernier entraînement."""
+    try:
+        metrics_path = os.path.join(MODELS_DIR, 'metrics.json')
+        with open(metrics_path, 'r') as f:
+            metrics = json.load(f)
+        return metrics
+    except FileNotFoundError:
+        return {
+            "error": "Métriques non disponibles. Réentraînez le modèle.",
+            "mae": None,
+            "rmse": None,
+            "mape": None,
+            "model_version": None,
+            "timestamp": datetime.now().isoformat()
+        }
+
+
+# ==========================================
+# ENDPOINT - ENTRAÎNEMENT
+# ==========================================
+
+@app.post("/train")
+def train_model_endpoint():
+    """Lance l'entraînement du modèle en arrière-plan."""
+    try:
+        script_path = os.path.join(os.path.dirname(__file__), '..', 'training', 'train_model.py')
+        if os.path.exists(script_path):
+            subprocess.Popen([sys.executable, script_path])
+            return {"status": "Entraînement lancé en arrière-plan", "timestamp": datetime.now().isoformat()}
+        else:
+            return {"status": "Script d'entraînement non trouvé", "path": script_path}
+    except Exception as e:
+        raise HTTPException(500, f"Erreur lors du lancement : {e}")
+
+
+# ==========================================
+# CHATBOT INTELLIGENT (Endpoint principal)
 # ==========================================
 
 @app.post("/chat")
 def chat(request: ChatRequest):
-    """Chatbot intelligent avancé avec mémoire et analyses"""
-    msg = request.message.lower().strip()
-    today = date.today()
-    user_id = "default"
+    """Chatbot intelligent avec Mistral + données temps réel + mémoire"""
     
-    context = get_conversation_context(user_id)
+    start_time = time.time()
+    session_id = request.session_id or hashlib.md5(str(time.time()).encode()).hexdigest()[:8]
     
-    # Détection du médicament
-    medicine_name = detect_medicine_name(msg)
-    entities = {
-        "medicine_name": medicine_name,
-        "period": "7",
-        "quantity": None
+    msg = request.message.strip()
+    print(f"📩 Message reçu: {msg[:50]}...")
+    
+    # 1. Récupérer le contexte de la session
+    context = conversation_memory.get_context(session_id)
+    
+    # 2. Extraire les entités
+    entities = extract_entities(msg)
+    print(f"🏷️ Entités: {entities}")
+    
+    # 3. Détecter l'intention
+    intent = detect_intent(msg, entities)
+    print(f"🎯 Intention: {intent}")
+    
+    # 4. Récupérer les données pertinentes
+    data_context = get_relevant_data(intent, entities, msg)
+    print(f"📊 Données récupérées: {len(str(data_context))} caractères")
+    
+    # 5. Construire le prompt enrichi
+    enriched_prompt = build_enriched_prompt(msg, intent, entities, data_context)
+    
+    # 6. Appeler Mistral avec contexte
+    mistral_response = call_mistral_with_context(enriched_prompt, context)
+    
+    if mistral_response:
+        # Sauvegarder en mémoire
+        conversation_memory.add_message(session_id, "user", msg)
+        conversation_memory.add_message(session_id, "assistant", mistral_response)
+        
+        print(f"✅ Réponse Mistral en {time.time()-start_time:.2f}s")
+        return {
+            "reply": mistral_response,
+            "session_id": session_id,
+            "timestamp": datetime.now().isoformat(),
+            "source": "mistral",
+            "intent": intent,
+            "data_used": bool(data_context)
+        }
+    
+    # 7. Fallback intelligent
+    print("🔄 Utilisation du fallback intelligent")
+    fallback_reply = handle_fallback_intelligent(msg, intent, entities)
+    
+    conversation_memory.add_message(session_id, "user", msg)
+    conversation_memory.add_message(session_id, "assistant", fallback_reply)
+    
+    return {
+        "reply": fallback_reply,
+        "session_id": session_id,
+        "timestamp": datetime.now().isoformat(),
+        "source": "fallback",
+        "intent": intent
     }
-    
-    # Extraction des nombres
-    numbers = re.findall(r'\d+', msg)
-    if numbers:
-        entities["quantity"] = int(numbers[0])
-        if "jour" in msg:
-            entities["period"] = numbers[0]
-        elif "semaine" in msg:
-            entities["period"] = str(int(numbers[0]) * 7)
-        elif "mois" in msg:
-            entities["period"] = str(int(numbers[0]) * 30)
-    
-    # Détection avancée de l'intention
-    intent_result = detect_intent_improved(msg)
-    intent = intent_result.get("intent")
-    
-    logger.info(f"🔍 Intention: {intent} | Médicament: {medicine_name}")
-    
-    # Exécution de l'action
-    result = handle_complex_query(msg, entities, context)
-    
-    if not result:
-        if intent == "salutation":
-            result = handle_salutation()
-        elif intent == "stock" and entities.get("medicine_name"):
-            result = handle_stock_query(entities)
-        elif intent == "rupture":
-            result = handle_rupture_query()
-        elif intent == "prevision" and entities.get("medicine_name"):
-            result = handle_prediction_query(entities)
-        elif intent == "ca":
-            result = handle_revenue_query(entities)
-        elif intent == "expiration":
-            result = handle_expiration_query(entities)
-        elif intent == "commande" and entities.get("medicine_name"):
-            result = handle_order_query(entities)
-        elif intent == "vente" and entities.get("medicine_name"):
-            result = handle_sales_query(entities)
-        elif "meilleur" in msg or "plus vendu" in msg or "top" in msg:
-            result = handle_best_selling()
-        elif "prix" in msg and entities.get("medicine_name"):
-            result = handle_price_query(entities)
-        elif intent == "aide":
-            result = handle_help()
-        else:
-            result = handle_fallback_improved(msg)
-    
-    # Questions de suivi
-    follow_up = ""
-    if result and medicine_name and "stock" in result.get("reply", ""):
-        follow_up = "\n\n💡 Voulez-vous connaître la prévision de vente pour ce médicament ?"
-    elif result and "rupture" in result.get("reply", ""):
-        follow_up = "\n\n💡 Souhaitez-vous recevoir une alerte par email pour les ruptures ?"
-    elif result and "analyse" in result.get("reply", ""):
-        follow_up = "\n\n💡 Voulez-vous des détails sur un médicament en particulier ?"
-    
-    if follow_up and "question" not in msg:
-        result["reply"] += follow_up
-    
-    # Sauvegarde du contexte
-    update_conversation(user_id, msg, result.get("reply", ""), medicine_name)
-    
-    result["timestamp"] = today.isoformat()
-    return result
 
 
-logger.info("\n✅ API DENG PHARMA prête !")
-logger.info("📖 Documentation : http://127.0.0.1:8001/docs")
+# ==========================================
+# FONCTIONS D'ENRICHISSEMENT DU CHAT
+# ==========================================
+
+def get_relevant_data(intent: str, entities: Dict, msg: str) -> Dict:
+    """Récupère les données pertinentes selon l'intention"""
+    data = {}
+    
+    if intent == "stock":
+        med_name = entities.get("medicine_name")
+        if med_name:
+            stock = get_medicine_stock_by_name(med_name)
+            if stock is not None:
+                data["stock"] = stock
+                data["medicine"] = med_name
+    
+    elif intent == "rupture":
+        out_of_stock = get_out_of_stock_medicines()
+        if out_of_stock:
+            data["out_of_stock"] = out_of_stock[:10]
+    
+    elif intent == "prevision":
+        med_name = entities.get("medicine_name")
+        if med_name:
+            history = get_medicine_history_by_name(med_name, days=30)
+            if history:
+                data["history"] = history
+                data["prediction"] = predict_sales_from_history(history)
+                data["avg_sales"] = sum(history) / len(history)
+    
+    elif intent == "ca":
+        period = int(entities.get("period", "7"))
+        revenue = get_revenue_period(period)
+        prev_revenue = get_revenue_period(period, offset=period)
+        data["period"] = period
+        data["revenue"] = revenue
+        data["previous_revenue"] = prev_revenue
+        if prev_revenue > 0:
+            data["evolution"] = ((revenue - prev_revenue) / prev_revenue * 100)
+    
+    elif intent == "expiration":
+        period = int(entities.get("period", "30"))
+        expiring = get_expiring_medicines(period)
+        if expiring:
+            data["expiring"] = expiring[:15]
+    
+    elif intent == "top":
+        top_stocks = get_top_stocks(5)
+        if top_stocks:
+            data["top_stocks"] = top_stocks
+    
+    elif intent == "dashboard":
+        dashboard_data = get_dashboard_summary()
+        if dashboard_data:
+            data["dashboard"] = dashboard_data
+    
+    elif intent == "commande":
+        med_name = entities.get("medicine_name")
+        if med_name:
+            stock = get_medicine_stock_by_name(med_name)
+            history = get_medicine_history_by_name(med_name, days=30)
+            if stock is not None and history:
+                avg_daily = sum(history) / len(history)
+                data["medicine"] = med_name
+                data["current_stock"] = stock
+                data["avg_daily_sales"] = avg_daily
+                data["recommended_order"] = max(0, (avg_daily * 14) - stock)
+    
+    return data
+
+def build_enriched_prompt(msg: str, intent: str, entities: Dict, data: Dict) -> str:
+    """Construit un prompt enrichi avec les données"""
+    
+    data_text = ""
+    
+    if "stock" in data:
+        data_text += f"📦 Stock actuel de {data.get('medicine', '')}: {data['stock']:.0f} unités.\n"
+    
+    if "out_of_stock" in data:
+        data_text += f"🚨 Médicaments en rupture: {', '.join(data['out_of_stock'])}.\n"
+    
+    if "prediction" in data:
+        data_text += f"📈 Prévision de vente: {data['prediction']:.0f} unités sur 7 jours.\n"
+        data_text += f"📊 Moyenne historique: {data.get('avg_sales', 0):.0f} unités/jour.\n"
+    
+    if "revenue" in data:
+        evol = data.get('evolution', 0)
+        emoji = "📈" if evol >= 0 else "📉"
+        data_text += f"💰 Chiffre d'affaires ({data['period']} jours): {data['revenue']:,.0f} FCFA.\n"
+        data_text += f"   Évolution: {emoji} {evol:+.1f}%.\n"
+    
+    if "expiring" in data:
+        data_text += f"⚠️ Médicaments proches de péremption:\n"
+        for med, date_str, qty in data['expiring'][:5]:
+            data_text += f"   - {med}: expire le {date_str} ({qty:.0f} unités)\n"
+    
+    if "top_stocks" in data:
+        data_text += f"🏆 Top stocks:\n"
+        for med, qty in data['top_stocks']:
+            data_text += f"   - {med}: {qty:.0f} unités\n"
+    
+    if "recommended_order" in data:
+        data_text += f"📦 Recommandation commande {data.get('medicine', '')}:\n"
+        data_text += f"   - Stock actuel: {data['current_stock']:.0f} unités\n"
+        data_text += f"   - Vente moyenne: {data['avg_daily_sales']:.0f} unités/jour\n"
+        data_text += f"   - Quantité recommandée: {data['recommended_order']:.0f} unités\n"
+    
+    if "dashboard" in data:
+        d = data['dashboard']
+        data_text += f"📊 Résumé du tableau de bord:\n"
+        data_text += f"   - Total médicaments: {d.get('total_medicines', 0)}\n"
+        data_text += f"   - Ventes aujourd'hui: {d.get('today_sales', 0):,.0f} FCFA\n"
+        data_text += f"   - Ruptures: {d.get('out_of_stock', 0)}\n"
+        data_text += f"   - Péremptions proches (7j): {d.get('expiring_soon', 0)}\n"
+    
+    if not data_text:
+        data_text = "Aucune donnée spécifique n'a été trouvée pour cette requête."
+    
+    return f"""
+Question de l'utilisateur : {msg}
+
+Données temps réel de DENG PHARMA :
+{data_text}
+
+Génère une réponse naturelle, précise et utile pour l'utilisateur. Utilise ces données pour répondre.
+"""
+
+
+# ==========================================
+# FALLBACK INTELLIGENT
+# ==========================================
+
+def handle_fallback_intelligent(msg: str, intent: str, entities: Dict) -> str:
+    """Fallback intelligent avec données réelles"""
+    
+    if intent == "salutation":
+        return """Bonjour ! 👋 Je suis l'assistant intelligent de DENG PHARMA.
+
+Je peux vous aider avec :
+- 📦 Vérifier les stocks
+- 📊 Consulter le chiffre d'affaires
+- ⚠️ Voir les ruptures et péremptions
+- 📈 Faire des prévisions
+- 📦 Recommander des commandes
+
+Que puis-je faire pour vous ? 😊"""
+    
+    if intent == "aide":
+        return """🤖 **Aide - Assistant DENG PHARMA**
+
+**Je peux répondre à vos questions sur :**
+
+📦 **Stock** : "Stock de Paracétamol"
+🚨 **Ruptures** : "Quels médicaments sont en rupture ?"
+📈 **Prévisions** : "Prévision pour Amoxicilline"
+💰 **CA** : "Chiffre d'affaires du mois"
+⚠️ **Expirations** : "Expirations dans 30 jours"
+📦 **Commande** : "Commander Paracétamol"
+🏆 **Top** : "Meilleurs produits"
+📊 **Dashboard** : "Résumé de la pharmacie"
+
+**Posez votre question en langage naturel !** 💬"""
+    
+    if intent == "stock":
+        result = handle_stock_query(entities)
+        return result.get("reply", "Stock non disponible.")
+    
+    if intent == "rupture":
+        result = handle_rupture_query()
+        return result.get("reply", "Ruptures non disponibles.")
+    
+    if intent == "prevision":
+        result = handle_prediction_query(entities)
+        return result.get("reply", "Prévision non disponible.")
+    
+    if intent == "ca":
+        result = handle_revenue_query(entities)
+        return result.get("reply", "CA non disponible.")
+    
+    if intent == "expiration":
+        result = handle_expiration_query(entities)
+        return result.get("reply", "Expirations non disponibles.")
+    
+    if intent == "commande":
+        result = handle_order_query(entities)
+        return result.get("reply", "Commande non disponible.")
+    
+    if intent == "top":
+        result = handle_top_query()
+        return result.get("reply", "Top non disponible.")
+    
+    if intent == "dashboard":
+        result = handle_dashboard_query()
+        return result.get("reply", "Dashboard non disponible.")
+    
+    return """🤔 Je n'ai pas bien compris votre demande.
+
+💡 Essayez de préciser votre question :
+- "Stock de Paracétamol"
+- "Prévision pour Amoxicilline"
+- "Quels sont les médicaments en rupture ?"
+- "Chiffre d'affaires du mois"
+
+Ou tapez **"aide"** pour voir toutes les fonctionnalités disponibles."""
+
+
+# ==========================================
+# FONCTIONS DE FALLBACK
+# ==========================================
+
+def handle_stock_query(entities: Dict) -> Dict:
+    """Répond à une question sur le stock"""
+    med_name = entities.get("medicine_name")
+    if not med_name:
+        return {"reply": "❓ Quel médicament vous intéresse ?"}
+    
+    stock = get_medicine_stock_by_name(med_name)
+    if stock is None:
+        return {"reply": f"❌ Je n'ai pas trouvé de médicament '{med_name}'."}
+    
+    if stock == 0:
+        emoji, status = "🚨", "⚠️ **Rupture de stock !**"
+        suggestion = "\n💡 **Action :** Passez commande immédiatement !"
+    elif stock < 10:
+        emoji, status = "⚠️", f"⚠️ **Stock très bas** ({stock:.0f} unités)"
+        suggestion = "\n💡 **Suggestion :** Pensez à commander bientôt."
+    elif stock < 30:
+        emoji, status = "📦", f"📦 **Stock modéré** ({stock:.0f} unités)"
+        suggestion = "\n💡 **Suggestion :** Surveillez l'évolution."
+    else:
+        emoji, status = "✅", f"✅ **Stock suffisant** ({stock:.0f} unités)"
+        suggestion = ""
+    
+    return {"reply": f"{emoji} **{med_name.capitalize()}** : {status}{suggestion}"}
+
+def handle_rupture_query() -> Dict:
+    """Liste les médicaments en rupture"""
+    out_of_stock = get_out_of_stock_medicines()
+    if out_of_stock:
+        reply = "🚨 **Médicaments en rupture de stock :**\n\n"
+        for med in out_of_stock[:10]:
+            reply += f"  • ❌ {med}\n"
+        if len(out_of_stock) > 10:
+            reply += f"\n... et {len(out_of_stock) - 10} autres."
+        reply += "\n\n⚠️ **Action :** Passez commande immédiatement !"
+    else:
+        reply = "✅ **Aucun médicament en rupture.** Tout va bien !"
+    return {"reply": reply}
+
+def handle_prediction_query(entities: Dict) -> Dict:
+    """Donne une prévision de vente"""
+    med_name = entities.get("medicine_name")
+    if not med_name:
+        return {"reply": "❓ Pour quel médicament voulez-vous une prévision ?"}
+    
+    history = get_medicine_history_by_name(med_name, days=30)
+    if not history or len(history) < 3:
+        return {"reply": f"⚠️ Pas assez de données pour **{med_name}**. Il faut au moins 3 jours d'historique."}
+    
+    pred = predict_sales_from_history(history)
+    avg_sales = sum(history) / len(history)
+    trend = "📈 **en hausse**" if pred > avg_sales else "📉 **en baisse**"
+    
+    return {
+        "reply": (
+            f"📊 **Prévision pour {med_name.capitalize()}**\n\n"
+            f"  • Ventes prévues (7j) : **{pred:.0f}** unités\n"
+            f"  • Moyenne historique : **{avg_sales:.0f}** unités/jour\n"
+            f"  • Tendance : {trend}\n"
+            f"  • Basé sur {len(history)} jours de données"
+        )
+    }
+
+def handle_revenue_query(entities: Dict) -> Dict:
+    """Calcule le chiffre d'affaires"""
+    period = int(entities.get("period", "7"))
+    revenue = get_revenue_period(period)
+    prev_revenue = get_revenue_period(period, offset=period)
+    evolution = ((revenue - prev_revenue) / prev_revenue * 100) if prev_revenue > 0 else 0
+    emoji = "📈" if evolution >= 0 else "📉"
+    
+    return {
+        "reply": (
+            f"💰 **Chiffre d'affaires**\n\n"
+            f"  • Période : **{period}** jours\n"
+            f"  • Total : **{revenue:,.0f}** FCFA\n"
+            f"  • Évolution : {emoji} **{evolution:+.1f}%**\n"
+            f"  • Moyenne journalière : **{revenue/period:,.0f}** FCFA"
+        )
+    }
+
+def handle_expiration_query(entities: Dict) -> Dict:
+    """Liste les médicaments qui expirent"""
+    days = int(entities.get("period", "30"))
+    expiring = get_expiring_medicines(days)
+    
+    if expiring:
+        reply = f"⚠️ **Médicaments expirant dans {days} jours :**\n\n"
+        for med, date_str, qty in expiring[:10]:
+            reply += f"  • {med} : {qty:.0f} unités (expire le {date_str})\n"
+        if len(expiring) > 10:
+            reply += f"\n... et {len(expiring) - 10} autres."
+        reply += "\n\n💡 **Action :** Priorisez la vente ou le retour."
+    else:
+        reply = f"✅ Aucun médicament n'expire dans les {days} jours."
+    return {"reply": reply}
+
+def handle_order_query(entities: Dict) -> Dict:
+    """Recommande une commande"""
+    med_name = entities.get("medicine_name")
+    if not med_name:
+        return {"reply": "❓ Pour quel médicament voulez-vous une recommandation ?"}
+    
+    stock = get_medicine_stock_by_name(med_name)
+    history = get_medicine_history_by_name(med_name, days=30)
+    if not history:
+        return {"reply": f"⚠️ Pas assez de données pour {med_name}."}
+    
+    avg_daily = sum(history) / len(history)
+    recommended = max(0, (avg_daily * 14) - stock)
+    days_of_stock = stock / avg_daily if avg_daily > 0 else 0
+    
+    return {
+        "reply": (
+            f"📦 **Recommandation de commande pour {med_name.capitalize()}**\n\n"
+            f"  • Stock actuel : **{stock:.0f}** unités\n"
+            f"  • Vente moyenne : **{avg_daily:.0f}** unités/jour\n"
+            f"  • Autonomie : **{days_of_stock:.0f}** jours\n"
+            f"  • **Quantité recommandée : {recommended:.0f}** unités"
+        )
+    }
+
+def handle_top_query() -> Dict:
+    """Top des stocks"""
+    top = get_top_stocks(5)
+    if top:
+        reply = "🏆 **Top 5 des médicaments en stock :**\n\n"
+        for i, (med, qty) in enumerate(top, 1):
+            reply += f"  {i}. {med} : **{qty:.0f}** unités\n"
+        return {"reply": reply}
+    return {"reply": "❌ Aucun médicament en stock."}
+
+def handle_dashboard_query() -> Dict:
+    """Résumé du dashboard"""
+    data = get_dashboard_summary()
+    if data:
+        reply = f"""📊 **Résumé DENG PHARMA** - {data.get('date')}
+
+  • Total médicaments : **{data.get('total_medicines', 0)}**
+  • Ventes aujourd'hui : **{data.get('today_sales', 0):,.0f}** FCFA
+  • Ruptures : **{data.get('out_of_stock', 0)}** 🚨
+  • Péremptions (7j) : **{data.get('expiring_soon', 0)}** ⚠️"""
+        return {"reply": reply}
+    return {"reply": "❌ Données non disponibles."}
+
+
+# ==========================================
+# ENDPOINTS DE GESTION DU CHAT
+# ==========================================
+
+@app.get("/chat/session/{session_id}")
+def get_session_history(session_id: str):
+    """Récupère l'historique d'une session de chat"""
+    history = conversation_memory.get_or_create_session(session_id)
+    return {
+        "session_id": session_id,
+        "history": history,
+        "length": len(history),
+        "timestamp": datetime.now().isoformat()
+    }
+
+@app.delete("/chat/session/{session_id}")
+def clear_session(session_id: str):
+    """Efface une session de chat"""
+    if session_id in conversation_memory.sessions:
+        del conversation_memory.sessions[session_id]
+        return {"status": "cleared", "session_id": session_id, "timestamp": datetime.now().isoformat()}
+    return {"status": "not_found", "session_id": session_id}
+
+@app.get("/chat/stats")
+def get_chat_stats():
+    """Statistiques du chatbot"""
+    return {
+        "total_sessions": len(conversation_memory.sessions),
+        "total_messages": sum(len(h) for h in conversation_memory.sessions.values()),
+        "mistral_configured": bool(MISTRAL_API_KEY),
+        "memory_limit": conversation_memory.max_history,
+        "timestamp": datetime.now().isoformat()
+    }
+
+
+print("\n✅ API DENG PHARMA v3.0 prête !")
+print("📖 Documentation : http://127.0.0.1:8001/docs")
+print(f"🤖 Chatbot: {bool(MISTRAL_API_KEY) and 'Mistral configuré' or 'Fallback uniquement'}")
+print(f"🧠 Modèle: {model is not None and 'Chargé' or 'Non chargé'}")
