@@ -208,28 +208,6 @@ def get_out_of_stock_medicines() -> List[str]:
         logger.error(f"Erreur ruptures: {e}")
         return []
 
-def get_revenue_period(days: int, offset: int = 0) -> float:
-    """Calcule le CA sur une période donnée"""
-    try:
-        conn = get_db_connection()
-        if not conn:
-            return 0
-        cursor = conn.cursor()
-        query = """
-            SELECT COALESCE(SUM(total_amount), 0)
-            FROM sales_sale
-            WHERE created_at >= CURRENT_DATE - INTERVAL '%s days' - INTERVAL '%s days'
-              AND created_at < CURRENT_DATE - INTERVAL '%s days'
-        """
-        cursor.execute(query, (days + offset, offset, offset))
-        row = cursor.fetchone()
-        cursor.close()
-        conn.close()
-        return float(row[0]) if row else 0
-    except Exception as e:
-        logger.error(f"Erreur revenue: {e}")
-        return 0
-
 def get_expiring_medicines(days: int = 30) -> List[tuple]:
     """Retourne les médicaments qui expirent dans les X jours"""
     try:
@@ -266,11 +244,11 @@ def predict_sales_from_history(history: List[float]) -> float:
 
 
 # ==========================================
-# ANALYSES AVANCÉES
+# DONNÉES RÉELLES POUR LE CHATBOT
 # ==========================================
 
-def get_sales_trend(period_days: int = 30) -> Dict:
-    """Analyse la tendance des ventes"""
+def get_real_revenue(period_days: int = 30, offset: int = 0) -> Dict:
+    """Calcule le chiffre d'affaires réel sur une période"""
     try:
         conn = get_db_connection()
         if not conn:
@@ -278,36 +256,68 @@ def get_sales_trend(period_days: int = 30) -> Dict:
         
         cursor = conn.cursor()
         query = """
-            SELECT DATE(created_at), COUNT(*), SUM(total_amount)
+            SELECT 
+                COALESCE(SUM(total_amount), 0) as total,
+                COUNT(*) as nb_ventes,
+                COALESCE(AVG(total_amount), 0) as panier_moyen
             FROM sales_sale
-            WHERE created_at >= CURRENT_DATE - INTERVAL '%s days'
-            GROUP BY DATE(created_at)
-            ORDER BY date ASC
+            WHERE created_at >= CURRENT_DATE - INTERVAL '%s days' - INTERVAL '%s days'
+              AND created_at < CURRENT_DATE - INTERVAL '%s days'
         """
-        cursor.execute(query, (period_days,))
+        cursor.execute(query, (period_days + offset, offset))
+        row = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        
+        return {
+            "total": float(row[0]),
+            "nb_ventes": row[1],
+            "panier_moyen": float(row[2]),
+            "period": period_days
+        }
+    except Exception as e:
+        logger.error(f"Erreur revenu réel: {e}")
+        return {"error": str(e)}
+
+def get_real_top_products(limit: int = 5) -> List[Dict]:
+    """Top produits réels"""
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return []
+        
+        cursor = conn.cursor()
+        query = """
+            SELECT 
+                m.commercial_name, 
+                COALESCE(SUM(si.quantity), 0) as qte_vendue,
+                COALESCE(SUM(si.quantity * si.unit_price), 0) as chiffre_affaires,
+                COUNT(DISTINCT s.id) as nb_ventes
+            FROM sales_saleitem si
+            JOIN sales_sale s ON si.sale_id = s.id
+            JOIN medicines_medicine m ON si.medicine_id = m.id
+            WHERE s.created_at >= CURRENT_DATE - INTERVAL '30 days'
+            GROUP BY m.id
+            ORDER BY qte_vendue DESC
+            LIMIT %s
+        """
+        cursor.execute(query, (limit,))
         rows = cursor.fetchall()
         cursor.close()
         conn.close()
         
-        if not rows:
-            return {"error": "Aucune donnée de vente"}
-        
-        totals = [float(row[2]) for row in rows]
-        avg = sum(totals) / len(totals)
-        max_day = max(rows, key=lambda x: x[2])
-        trend = "📈 en hausse" if totals[-1] > totals[0] else "📉 en baisse"
-        
-        return {
-            "total_days": len(rows),
-            "avg_daily": avg,
-            "max_day": max_day[0],
-            "max_amount": max_day[2],
-            "trend": trend,
-            "total_amount": sum(totals)
-        }
+        return [
+            {
+                "name": row[0],
+                "sold": float(row[1]),
+                "revenue": float(row[2]),
+                "transactions": row[3]
+            }
+            for row in rows
+        ]
     except Exception as e:
-        logger.error(f"Erreur tendance: {e}")
-        return {"error": str(e)}
+        logger.error(f"Erreur top produits: {e}")
+        return []
 
 def get_stock_health() -> Dict:
     """Analyse la santé globale du stock"""
@@ -352,32 +362,6 @@ def get_stock_health() -> Dict:
     except Exception as e:
         logger.error(f"Erreur santé stock: {e}")
         return {"error": str(e)}
-
-def get_top_products(limit: int = 5) -> List[Dict]:
-    """Retourne les produits les plus performants"""
-    try:
-        conn = get_db_connection()
-        if not conn:
-            return []
-        
-        cursor = conn.cursor()
-        query = """
-            SELECT m.commercial_name, SUM(si.quantity) as total_sold, SUM(si.quantity * si.unit_price) as revenue
-            FROM sales_saleitem si
-            JOIN medicines_medicine m ON si.medicine_id = m.id
-            GROUP BY m.id
-            ORDER BY total_sold DESC
-            LIMIT %s
-        """
-        cursor.execute(query, (limit,))
-        rows = cursor.fetchall()
-        cursor.close()
-        conn.close()
-        
-        return [{"name": row[0], "sold": row[1], "revenue": row[2]} for row in rows]
-    except Exception as e:
-        logger.error(f"Erreur top produits: {e}")
-        return []
 
 
 # ==========================================
@@ -521,19 +505,31 @@ def handle_prediction_query(entities: Dict) -> Dict:
     }
 
 def handle_revenue_query(entities: Dict) -> Dict:
-    """Calcule le chiffre d'affaires"""
-    period = int(entities.get("period", "7"))
-    revenue = get_revenue_period(period)
-    prev_revenue = get_revenue_period(period, offset=period)
-    evolution = ((revenue - prev_revenue) / prev_revenue * 100) if prev_revenue > 0 else 0
+    """Calcule le chiffre d'affaires réel"""
+    period = int(entities.get("period", "30"))
+    revenue_data = get_real_revenue(period)
+    
+    if "error" in revenue_data:
+        return {"reply": f"❌ {revenue_data['error']}", "source": "internal"}
+    
+    # Comparer avec la période précédente
+    prev_revenue_data = get_real_revenue(period, offset=period)
+    prev_total = prev_revenue_data.get("total", 0) if "error" not in prev_revenue_data else 0
+    
+    evolution = 0
+    if prev_total > 0:
+        evolution = ((revenue_data["total"] - prev_total) / prev_total) * 100
+    
     emoji = "📈" if evolution >= 0 else "📉"
     
     return {
         "reply": (
-            f"💰 **Chiffre d'affaires**\n\n"
-            f"  • Période : **{period}** jours\n"
-            f"  • Total : **{revenue:,.0f}** FCFA\n"
-            f"  • Évolution : {emoji} **{evolution:+.1f}%**"
+            f"💰 **Chiffre d'affaires réel**\n\n"
+            f"  • Période : **{period}** derniers jours\n"
+            f"  • Total : **{revenue_data['total']:,.0f}** FCFA\n"
+            f"  • Nombre de ventes : **{revenue_data['nb_ventes']}**\n"
+            f"  • Panier moyen : **{revenue_data['panier_moyen']:,.0f}** FCFA\n"
+            f"  • Évolution vs période précédente : {emoji} **{evolution:+.1f}%**"
         ),
         "source": "internal"
     }
@@ -601,36 +597,23 @@ def handle_sales_query(entities: Dict) -> Dict:
         return {"reply": "❓ Pour quel médicament voulez-vous les ventes ?", "source": "internal"}
 
 def handle_best_selling() -> Dict:
-    """Médicament le plus vendu"""
-    try:
-        conn = get_db_connection()
-        if not conn:
-            return {"reply": "Je n'ai pas accès aux données actuellement.", "source": "internal"}
-        
-        cursor = conn.cursor()
-        query = """
-            SELECT m.commercial_name, SUM(si.quantity) as total_sold
-            FROM sales_saleitem si
-            JOIN medicines_medicine m ON si.medicine_id = m.id
-            GROUP BY m.id
-            ORDER BY total_sold DESC
-            LIMIT 1
-        """
-        cursor.execute(query)
-        row = cursor.fetchone()
-        cursor.close()
-        conn.close()
-        
-        if row:
-            return {
-                "reply": f"🏆 Le médicament le plus vendu est **{row[0]}** avec {row[1]} unités vendues.",
-                "source": "internal"
-            }
-        else:
-            return {"reply": "Aucune vente enregistrée pour le moment.", "source": "internal"}
-    except Exception as e:
-        logger.error(f"Erreur meilleure vente: {e}")
-        return {"reply": "Je n'ai pas pu récupérer les données.", "source": "internal"}
+    """Médicament le plus vendu (données réelles)"""
+    top = get_real_top_products(1)
+    
+    if not top:
+        return {"reply": "Aucune vente enregistrée pour le moment.", "source": "internal"}
+    
+    med = top[0]
+    return {
+        "reply": (
+            f"🏆 **Médicament le plus vendu**\n\n"
+            f"  • Nom : **{med['name']}**\n"
+            f"  • Quantité vendue : **{med['sold']:.0f}** unités\n"
+            f"  • Chiffre d'affaires : **{med['revenue']:,.0f}** FCFA\n"
+            f"  • Nombre de ventes : **{med['transactions']}** transactions"
+        ),
+        "source": "internal"
+    }
 
 def handle_price_query(entities: Dict) -> Dict:
     """Répond à une question sur le prix"""
@@ -666,36 +649,35 @@ def handle_price_query(entities: Dict) -> Dict:
         return {"reply": "Je n'ai pas pu récupérer les données.", "source": "internal"}
 
 def handle_complex_query(msg: str, entities: Dict, context: Dict) -> Optional[Dict]:
-    """Gère les requêtes complexes"""
+    """Requêtes complexes avec données réelles"""
     if any(word in msg for word in ["analyse", "résumé", "global", "synthèse", "état"]):
         stock_health = get_stock_health()
-        top_products = get_top_products(3)
-        trend = get_sales_trend(30)
+        revenue = get_real_revenue(30)
+        top_products = get_real_top_products(3)
+        ruptures = get_out_of_stock_medicines()
         
         if "error" in stock_health:
             return {"reply": "Je n'ai pas pu récupérer les données.", "source": "internal"}
         
-        reply = "📊 **Synthèse de votre pharmacie :**\n\n"
+        reply = "📊 **Synthèse de votre pharmacie (données réelles) :**\n\n"
         reply += f"🏷️ **Stock :** {stock_health.get('total', 0)} médicaments\n"
         reply += f"   • Ruptures : {stock_health.get('ruptures', 0)}\n"
         reply += f"   • Stock très bas : {stock_health.get('tres_bas', 0)}\n"
         reply += f"   • Santé : {stock_health.get('status', 'Inconnu')}\n\n"
-        reply += f"💰 **Chiffre d'affaires (30j) :** {trend.get('total_amount', 0):,.0f} FCFA\n"
-        reply += f"   • Tendance : {trend.get('trend', 'Inconnue')}\n\n"
+        
+        if "error" not in revenue:
+            reply += f"💰 **Chiffre d'affaires (30j) :** {revenue.get('total', 0):,.0f} FCFA\n"
+            reply += f"   • {revenue.get('nb_ventes', 0)} ventes\n"
+            reply += f"   • Panier moyen : {revenue.get('panier_moyen', 0):,.0f} FCFA\n\n"
+        
         reply += "🏆 **Top 3 des ventes :**\n"
         for i, p in enumerate(top_products[:3], 1):
-            reply += f"   {i}. {p['name']} : {p['sold']} unités\n"
+            reply += f"   {i}. {p['name']} : {p['sold']:.0f} unités\n"
+        
+        if ruptures:
+            reply += f"\n🚨 **{len(ruptures)} médicament(s) en rupture**"
         
         return {"reply": reply, "source": "internal"}
-    
-    if "compar" in msg or "vs" in msg:
-        return {"reply": "📊 Je peux comparer deux médicaments. Donnez-moi leurs noms.", "source": "internal"}
-    
-    if "conseil" in msg or "recommand" in msg:
-        stock_health = get_stock_health()
-        if "error" not in stock_health and stock_health.get("ruptures", 0) > 3:
-            return {"reply": "🚨 Je vous conseille de passer commande pour les médicaments en rupture.", "source": "internal"}
-        return {"reply": "✅ Votre stock semble en bonne santé. Continuez comme ça !", "source": "internal"}
     
     return None
 
