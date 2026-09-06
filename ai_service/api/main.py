@@ -120,93 +120,361 @@ def get_medicine_history(identifier: str, medicine_name: Optional[str] = None, d
 
 
 
+# ai_service/api/main.py - Fonction chat améliorée
+
+@app.post("/chat")
+def chat(request: ChatRequest):
+    """Assistant IA intelligent avec extraction d'entités et contexte"""
+    msg = request.message.lower().strip()
+    today = date.today()
+    
+    # 1️⃣ Extraire les entités du message
+    entities = extract_entities(msg)
+    print(f"🔍 Entités extraites: {entities}")
+    
+    # 2️⃣ Déterminer l'intention
+    intent = detect_intent(msg, entities)
+    print(f"🎯 Intention détectée: {intent}")
+    
+    # 3️⃣ Exécuter l'action selon l'intention
+    if intent == "stock":
+        return handle_stock_query(entities, msg)
+    elif intent == "rupture":
+        return handle_rupture_query()
+    elif intent == "prevision":
+        return handle_prediction_query(entities)
+    elif intent == "ca":
+        return handle_revenue_query(entities)
+    elif intent == "expiration":
+        return handle_expiration_query(entities)
+    elif intent == "commande":
+        return handle_order_query(entities)
+    elif intent == "vente":
+        return handle_sales_query(entities)
+    elif intent == "medicament_info":
+        return handle_medicine_info(entities)
+    elif intent == "aide":
+        return handle_help()
+    else:
+        return handle_fallback(msg)
+
 # ==========================================
-# FONCTIONS CHATBOT
+# FONCTIONS D'EXTRACTION ET DÉTECTION
 # ==========================================
 
-def extract_medicine_name(msg: str) -> Optional[str]:
-    """Extrait le nom d'un médicament du message"""
+def extract_entities(msg: str) -> Dict:
+    """Extrait les entités du message"""
+    entities = {
+        "medicine_name": None,
+        "quantity": None,
+        "period": "7",  # jours par défaut
+        "medicine_id": None,
+    }
+    
     # Liste des médicaments connus
-    known_medicines = [
+    medicines = [
         "paracétamol", "ibuprofène", "amoxicilline", "cétirizine",
         "artéméther", "quinine", "diclofénac", "métronidazole",
-        "oméprazole", "azithromycine", "ciprofloxacine"
+        "oméprazole", "azithromycine", "ciprofloxacine", "sro",
+        "vaccin", "moustiquaire", "ceftriaxone"
     ]
-    for med in known_medicines:
+    
+    # Extraire le nom du médicament
+    for med in medicines:
         if med in msg:
-            return med
-    return None
+            entities["medicine_name"] = med
+            break
+    
+    # Extraire une quantité (chiffres)
+    import re
+    numbers = re.findall(r'\d+', msg)
+    if numbers:
+        entities["quantity"] = int(numbers[0])
+    
+    # Extraire la période (jours, semaines, mois)
+    if "jour" in msg:
+        days = re.findall(r'(\d+)\s*jour', msg)
+        if days:
+            entities["period"] = days[0]
+        else:
+            entities["period"] = "7"
+    elif "semaine" in msg:
+        weeks = re.findall(r'(\d+)\s*semaine', msg)
+        entities["period"] = str(int(weeks[0]) * 7) if weeks else "7"
+    elif "mois" in msg:
+        months = re.findall(r'(\d+)\s*mois', msg)
+        entities["period"] = str(int(months[0]) * 30) if months else "30"
+    
+    return entities
 
-def get_medicine_stock_by_name(name: str) -> Optional[float]:
-    """Récupère le stock d'un médicament par son nom"""
-    try:
-        conn = get_db_connection()
-        if not conn:
-            return None
-        cursor = conn.cursor()
-        query = """
-            SELECT COALESCE(SUM(l.quantity), 0) as total_stock
-            FROM inventory_stocklot l
-            JOIN medicines_medicine m ON l.medicine_id = m.id
-            WHERE m.commercial_name ILIKE %s
-        """
-        cursor.execute(query, (f'%{name}%',))
-        row = cursor.fetchone()
-        cursor.close()
-        conn.close()
-        return float(row[0]) if row else 0
-    except Exception as e:
-        print(f"Erreur stock: {e}")
-        return None
+def detect_intent(msg: str, entities: Dict) -> str:
+    """Détecte l'intention du message"""
+    
+    # Intention : demande de stock
+    stock_keywords = ["stock", "combien", "quantité", "disponible", "reste", "a-t-on"]
+    if any(k in msg for k in stock_keywords) and entities.get("medicine_name"):
+        return "stock"
+    
+    # Intention : rupture
+    rupture_keywords = ["rupture", "épuisé", "manquant", "plus de", "en rade"]
+    if any(k in msg for k in rupture_keywords):
+        return "rupture"
+    
+    # Intention : prévision
+    prev_keywords = ["prévision", "prédiction", "prévoir", "estimer", "vente"]
+    if any(k in msg for k in prev_keywords) and entities.get("medicine_name"):
+        return "prevision"
+    
+    # Intention : chiffre d'affaires
+    ca_keywords = ["chiffre", "ca", "revenu", "recette", "gagné"]
+    if any(k in msg for k in ca_keywords):
+        return "ca"
+    
+    # Intention : expiration
+    exp_keywords = ["expire", "périmé", "péremption", "date limite"]
+    if any(k in msg for k in exp_keywords):
+        return "expiration"
+    
+    # Intention : commande
+    order_keywords = ["commander", "achat", "approvisionner", "réappro"]
+    if any(k in msg for k in order_keywords):
+        return "commande"
+    
+    # Intention : vente
+    sales_keywords = ["vente", "vendu", "achat client"]
+    if any(k in msg for k in sales_keywords):
+        return "vente"
+    
+    # Intention : info médicament
+    info_keywords = ["c'est quoi", "qu'est-ce que", "indication", "utiliser"]
+    if any(k in msg for k in info_keywords) and entities.get("medicine_name"):
+        return "medicament_info"
+    
+    # Intention : aide
+    if "aide" in msg or "help" in msg or "comment" in msg:
+        return "aide"
+    
+    return "fallback"
 
-def get_top_stocks(limit: int = 5) -> List[tuple]:
-    """Retourne les médicaments avec le plus de stock"""
-    try:
-        conn = get_db_connection()
-        if not conn:
-            return []
-        cursor = conn.cursor()
-        query = """
-            SELECT m.commercial_name, COALESCE(SUM(l.quantity), 0) as total
-            FROM medicines_medicine m
-            LEFT JOIN inventory_stocklot l ON l.medicine_id = m.id
-            GROUP BY m.id
-            ORDER BY total DESC
-            LIMIT %s
-        """
-        cursor.execute(query, (limit,))
-        rows = cursor.fetchall()
-        cursor.close()
-        conn.close()
-        return [(row[0], float(row[1])) for row in rows if row[1] > 0]
-    except Exception as e:
-        print(f"Erreur top stocks: {e}")
-        return []
+# ==========================================
+# GESTIONNAIRES D'INTENTIONS
+# ==========================================
 
-def get_out_of_stock_medicines() -> List[str]:
-    """Retourne la liste des médicaments en rupture de stock"""
-    try:
-        conn = get_db_connection()
-        if not conn:
-            return []
-        cursor = conn.cursor()
-        query = """
-            SELECT DISTINCT m.commercial_name
-            FROM medicines_medicine m
-            LEFT JOIN inventory_stocklot l ON l.medicine_id = m.id
-            WHERE l.id IS NULL OR l.quantity <= 0
-        """
-        cursor.execute(query)
-        rows = cursor.fetchall()
-        cursor.close()
-        conn.close()
-        return [row[0] for row in rows]
-    except Exception as e:
-        print(f"Erreur ruptures: {e}")
-        return []
+def handle_stock_query(entities: Dict, msg: str) -> Dict:
+    """Répond à une question sur le stock"""
+    med_name = entities.get("medicine_name")
+    if not med_name:
+        return {"reply": "❓ Quel médicament vous intéresse ?", "timestamp": date.today().isoformat()}
+    
+    stock = get_medicine_stock_by_name(med_name)
+    if stock is None:
+        return {"reply": f"❌ Je n'ai pas trouvé de médicament '{med_name}'.", "timestamp": date.today().isoformat()}
+    
+    # Seuil d'alerte
+    if stock == 0:
+        emoji, status = "🚨", "⚠️ **Rupture de stock !**"
+    elif stock < 10:
+        emoji, status = "⚠️", f"⚠️ **Stock très bas** ({stock:.0f} unités)"
+    elif stock < 30:
+        emoji, status = "📦", f"📦 **Stock modéré** ({stock:.0f} unités)"
+    else:
+        emoji, status = "✅", f"✅ **Stock suffisant** ({stock:.0f} unités)"
+    
+    # Ajouter une suggestion
+    suggestion = ""
+    if stock < 10:
+        suggestion = "\n💡 **Suggestion :** Pensez à commander bientôt."
+    
+    return {
+        "reply": f"{emoji} **{med_name.capitalize()}** : {status}{suggestion}",
+        "timestamp": date.today().isoformat()
+    }
 
-def get_monthly_revenue() -> float:
-    """Calcule le chiffre d'affaires du mois en cours"""
+def handle_rupture_query() -> Dict:
+    """Liste les médicaments en rupture"""
+    out_of_stock = get_out_of_stock_medicines()
+    if out_of_stock:
+        reply = "🚨 **Médicaments en rupture de stock :**\n\n"
+        for med in out_of_stock:
+            reply += f"  • ❌ {med}\n"
+        reply += "\n⚠️ **Action :** Passez commande immédiatement !"
+    else:
+        reply = "✅ **Aucun médicament en rupture.** Tout va bien !"
+    return {"reply": reply, "timestamp": date.today().isoformat()}
+
+def handle_prediction_query(entities: Dict) -> Dict:
+    """Donne une prévision de vente"""
+    med_name = entities.get("medicine_name")
+    if not med_name:
+        return {"reply": "❓ Pour quel médicament voulez-vous une prévision ?", "timestamp": date.today().isoformat()}
+    
+    history = get_medicine_history_by_name(med_name, days=30)
+    if not history or len(history) < 3:
+        return {
+            "reply": f"⚠️ Pas assez de données pour **{med_name}**. Il faut au moins 3 jours d'historique.",
+            "timestamp": date.today().isoformat()
+        }
+    
+    pred = predict_sales_from_history(history)
+    
+    # Détail supplémentaire
+    avg_sales = sum(history) / len(history)
+    trend = "📈 **en hausse**" if pred > avg_sales else "📉 **en baisse**"
+    
+    return {
+        "reply": (
+            f"📊 **Prévision pour {med_name.capitalize()}**\n\n"
+            f"  • Ventes prévues : **{pred:.0f}** unités\n"
+            f"  • Moyenne historique : **{avg_sales:.0f}** unités\n"
+            f"  • Tendance : {trend}\n"
+            f"  • Basé sur {len(history)} jours de données"
+        ),
+        "timestamp": date.today().isoformat()
+    }
+
+def handle_revenue_query(entities: Dict) -> Dict:
+    """Calcule le chiffre d'affaires"""
+    period = int(entities.get("period", "7"))
+    revenue = get_revenue_period(period)
+    
+    # Comparaison avec période précédente
+    prev_revenue = get_revenue_period(period, offset=period)
+    evolution = ((revenue - prev_revenue) / prev_revenue * 100) if prev_revenue > 0 else 0
+    
+    emoji = "📈" if evolution >= 0 else "📉"
+    
+    return {
+        "reply": (
+            f"💰 **Chiffre d'affaires**\n\n"
+            f"  • Période : **{period}** jours\n"
+            f"  • Total : **{revenue:,.0f}** FCFA\n"
+            f"  • Évolution : {emoji} **{evolution:+.1f}%** par rapport à la période précédente"
+        ),
+        "timestamp": date.today().isoformat()
+    }
+
+def handle_expiration_query(entities: Dict) -> Dict:
+    """Liste les médicaments qui expirent"""
+    days = int(entities.get("period", "30"))
+    expiring = get_expiring_medicines(days)
+    
+    if expiring:
+        reply = f"⚠️ **Médicaments expirant dans {days} jours :**\n\n"
+        for med, date_str in expiring[:10]:  # Limiter à 10
+            reply += f"  • {med} (expire le {date_str})\n"
+        if len(expiring) > 10:
+            reply += f"\n... et {len(expiring) - 10} autres."
+    else:
+        reply = f"✅ Aucun médicament n'expire dans les {days} jours."
+    return {"reply": reply, "timestamp": date.today().isoformat()}
+
+def handle_order_query(entities: Dict) -> Dict:
+    """Recommande une commande"""
+    med_name = entities.get("medicine_name")
+    if not med_name:
+        return {"reply": "❓ Pour quel médicament voulez-vous une recommandation ?", "timestamp": date.today().isoformat()}
+    
+    stock = get_medicine_stock_by_name(med_name)
+    history = get_medicine_history_by_name(med_name, days=30)
+    if not history:
+        return {"reply": f"⚠️ Pas assez de données pour {med_name}.", "timestamp": date.today().isoformat()}
+    
+    avg_daily = sum(history) / len(history)
+    recommended = max(0, (avg_daily * 14) - stock)  # Recommander pour 14 jours
+    
+    return {
+        "reply": (
+            f"📦 **Recommandation de commande pour {med_name.capitalize()}**\n\n"
+            f"  • Stock actuel : **{stock:.0f}** unités\n"
+            f"  • Vente moyenne : **{avg_daily:.0f}** unités/jour\n"
+            f"  • Autonomie restante : **{stock / avg_daily:.0f}** jours\n"
+            f"  • **Quantité recommandée : {recommended:.0f}** unités"
+        ),
+        "timestamp": date.today().isoformat()
+    }
+
+def handle_sales_query(entities: Dict) -> Dict:
+    """Donne des informations sur les ventes"""
+    med_name = entities.get("medicine_name")
+    if med_name:
+        history = get_medicine_history_by_name(med_name, days=30)
+        if history:
+            total = sum(history)
+            avg = total / len(history)
+            return {
+                "reply": (
+                    f"📊 **Ventes de {med_name.capitalize()}**\n\n"
+                    f"  • Total (30 jours) : **{total:.0f}** unités\n"
+                    f"  • Moyenne : **{avg:.0f}** unités/jour\n"
+                    f"  • Meilleur jour : **{max(history):.0f}** unités"
+                ),
+                "timestamp": date.today().isoformat()
+            }
+        else:
+            return {"reply": f"❌ Aucune vente enregistrée pour {med_name}.", "timestamp": date.today().isoformat()}
+    else:
+        return {"reply": "❓ Pour quel médicament voulez-vous les ventes ?", "timestamp": date.today().isoformat()}
+
+def handle_medicine_info(entities: Dict) -> Dict:
+    """Donne des informations sur un médicament"""
+    med_name = entities.get("medicine_name")
+    if not med_name:
+        return {"reply": "❓ De quel médicament voulez-vous des informations ?", "timestamp": date.today().isoformat()}
+    
+    # Informations basiques (à enrichir)
+    infos = {
+        "paracétamol": "💊 Antalgique et antipyrétique. Utilisé contre la fièvre et la douleur.",
+        "ibuprofène": "💊 Anti-inflammatoire non stéroïdien (AINS). Douleurs, inflammations.",
+        "amoxicilline": "💊 Antibiotique de la famille des pénicillines. Infections bactériennes.",
+        "cétirizine": "💊 Antihistaminique. Allergies, rhinite.",
+        "artéméther": "💊 Antipaludéen. Traitement du paludisme.",
+        "quinine": "💊 Antipaludéen. Paludisme, crampes.",
+    }
+    
+    for key, info in infos.items():
+        if key in med_name:
+            return {"reply": f"{info}", "timestamp": date.today().isoformat()}
+    
+    return {"reply": f"💊 **{med_name.capitalize()}** : Je n'ai pas d'information spécifique sur ce médicament.", "timestamp": date.today().isoformat()}
+
+def handle_help() -> Dict:
+    """Affiche l'aide"""
+    return {
+        "reply": (
+            "🤖 **Aide - DENG PHARMA Assistant**\n\n"
+            "Je peux répondre à vos questions sur :\n\n"
+            "  • 📦 **Stock** : 'Stock de Paracétamol'\n"
+            "  • 🚨 **Ruptures** : 'Quels médicaments sont en rupture ?'\n"
+            "  • 📈 **Prévisions** : 'Prévision pour Amoxicilline'\n"
+            "  • 💰 **Chiffre d'affaires** : 'CA du mois'\n"
+            "  • ⚠️ **Expirations** : 'Expirations dans 30 jours'\n"
+            "  • 📦 **Commande** : 'Commander Amoxicilline'\n"
+            "  • 💊 **Info médicament** : 'C'est quoi Paracétamol ?'\n\n"
+            "Que puis-je faire pour vous ? 😊"
+        ),
+        "timestamp": date.today().isoformat()
+    }
+
+def handle_fallback(msg: str) -> Dict:
+    """Réponse par défaut"""
+    return {
+        "reply": (
+            "🤔 Je n'ai pas bien compris votre demande.\n\n"
+            "💡 Essayez de préciser votre question :\n"
+            "  • 'Stock de Paracétamol'\n"
+            "  • 'Prévision pour Amoxicilline'\n"
+            "  • 'Quels sont les médicaments en rupture ?'\n\n"
+            "Ou tapez 'aide' pour voir toutes les fonctionnalités."
+        ),
+        "timestamp": date.today().isoformat()
+    }
+
+# ==========================================
+# FONCTIONS UTILITAIRES SUPPLÉMENTAIRES
+# ==========================================
+
+def get_revenue_period(days: int, offset: int = 0) -> float:
+    """Calcule le CA sur une période donnée"""
     try:
         conn = get_db_connection()
         if not conn:
@@ -215,51 +483,17 @@ def get_monthly_revenue() -> float:
         query = """
             SELECT COALESCE(SUM(total_amount), 0)
             FROM sales_sale
-            WHERE DATE_TRUNC('month', created_at) = DATE_TRUNC('month', CURRENT_DATE)
+            WHERE created_at >= CURRENT_DATE - INTERVAL '%s days' - INTERVAL '%s days'
+              AND created_at < CURRENT_DATE - INTERVAL '%s days'
         """
-        cursor.execute(query)
+        cursor.execute(query, (days + offset, offset, offset))
         row = cursor.fetchone()
         cursor.close()
         conn.close()
         return float(row[0]) if row else 0
     except Exception as e:
-        print(f"Erreur CA: {e}")
+        print(f"Erreur revenue: {e}")
         return 0
-
-def get_expiring_medicines(days: int = 30) -> List[tuple]:
-    """Retourne les médicaments qui expirent dans les X jours"""
-    try:
-        conn = get_db_connection()
-        if not conn:
-            return []
-        cursor = conn.cursor()
-        query = """
-            SELECT m.commercial_name, l.expiry_date
-            FROM inventory_stocklot l
-            JOIN medicines_medicine m ON l.medicine_id = m.id
-            WHERE l.quantity > 0
-              AND l.expiry_date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '%s days'
-            ORDER BY l.expiry_date ASC
-        """
-        cursor.execute(query, (days,))
-        rows = cursor.fetchall()
-        cursor.close()
-        conn.close()
-        return [(row[0], row[1].strftime('%d/%m/%Y')) for row in rows]
-    except Exception as e:
-        print(f"Erreur expirations: {e}")
-        return []
-
-def get_medicine_history_by_name(name: str, days: int = 30):
-    """Récupère l'historique des ventes par nom de médicament"""
-    return get_medicine_history(name, medicine_name=name, days=days)
-
-def predict_sales_from_history(history: List[float]) -> float:
-    """Prédit les ventes à partir de l'historique"""
-    if not history:
-        return 0
-    # Utiliser une moyenne pondérée ou le modèle si disponible
-    return sum(history[-7:]) / min(7, len(history)) * 7
 
 
 
