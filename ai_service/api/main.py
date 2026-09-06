@@ -367,6 +367,9 @@ def call_mistral(prompt: str) -> Optional[str]:
             else:
                 print("❌ Réponse vide de Mistral")
                 return None
+        elif response.status_code == 429:
+            print("⚠️ Rate limit atteint, veuillez patienter...")
+            return "⚠️ Le chatbot est momentanément indisponible. Veuillez réessayer dans quelques instants."
         else:
             print(f"❌ Erreur Mistral: {response.status_code} - {response.text}")
             return None
@@ -374,12 +377,6 @@ def call_mistral(prompt: str) -> Optional[str]:
     except Exception as e:
         print(f"❌ Erreur Mistral: {e}")
         return None
-
-# Vérifier la clé
-if MISTRAL_API_KEY:
-    print("✅ Mistral API configurée avec succès !")
-else:
-    print("⚠️ MISTRAL_API_KEY non définie, le chatbot utilisera le mode basique.")
 # ==========================================
 # CHARGEMENT DU MODÈLE
 # ==========================================
