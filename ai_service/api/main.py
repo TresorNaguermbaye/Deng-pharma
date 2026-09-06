@@ -308,11 +308,11 @@ def detect_intent(msg: str, entities: Dict) -> str:
 
 
 # ==========================================
-# CONFIGURATION GROQ (HTTP direct)
+# CONFIGURATION MISTRAL AI
 # ==========================================
 
-GROQ_API_KEY = os.getenv('GROQ_API_KEY')
-GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
+MISTRAL_API_KEY = os.getenv('MISTRAL_API_KEY')
+MISTRAL_API_URL = "https://api.mistral.ai/v1/chat/completions"
 
 SYSTEM_PROMPT = """Tu es l'assistant IA de DENG PHARMA, une pharmacie intelligente au Tchad.
 
@@ -332,61 +332,32 @@ Instructions :
 5. Pour les chiffres, utilise le format FCFA.
 6. Sois concis (max 3-4 phrases)."""
 
-# ==========================================
-# CONFIGURATION GROQ (HTTP direct)
-# ==========================================
-
-GROQ_API_KEY = os.getenv('GROQ_API_KEY')
-GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
-
-# ✅ Modèles Groq actifs (septembre 2026)
-GROQ_MODEL = "llama-guard-3-8b"  # 🔥 Alternative
-
-SYSTEM_PROMPT = """Tu es l'assistant IA de DENG PHARMA, une pharmacie intelligente au Tchad.
-
-Tu as accès aux données suivantes (en temps réel via des fonctions) :
-- Stock des médicaments
-- Ruptures de stock
-- Prévisions de ventes (modèle XGBoost)
-- Chiffre d'affaires
-- Expirations
-- Recommandations de commandes
-
-Instructions :
-1. Réponds en français, de manière professionnelle et concise.
-2. Si l'utilisateur demande une information spécifique (stock, rupture, prévision), utilise les données disponibles.
-3. Si tu ne connais pas la réponse, dis-le honnêtement et propose de l'aide.
-4. Sois amical mais professionnel.
-5. Pour les chiffres, utilise le format FCFA.
-6. Sois concis (max 3-4 phrases)."""
-
-def call_groq(prompt: str) -> Optional[str]:
-    """Appelle l'API Groq via HTTP direct"""
-    if not GROQ_API_KEY:
-        print("❌ GROQ_API_KEY non définie")
+def call_mistral(prompt: str) -> Optional[str]:
+    """Appelle l'API Mistral via HTTP direct"""
+    if not MISTRAL_API_KEY:
+        print("❌ MISTRAL_API_KEY non définie")
         return None
     
     try:
         headers = {
-            "Authorization": f"Bearer {GROQ_API_KEY}",
+            "Authorization": f"Bearer {MISTRAL_API_KEY}",
             "Content-Type": "application/json"
         }
         
         payload = {
-            "model": GROQ_MODEL,  # ✅ Utilise la variable
+            "model": "mistral-small-latest",
             "messages": [
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": prompt}
             ],
             "temperature": 0.7,
-            "max_tokens": 500,
-            "top_p": 0.9
+            "max_tokens": 500
         }
         
-        print(f"🔍 Envoi de la requête à Groq avec modèle: {GROQ_MODEL}...")
-        response = requests.post(GROQ_API_URL, json=payload, headers=headers, timeout=30)
+        print(f"🔍 Envoi de la requête à Mistral...")
+        response = requests.post(MISTRAL_API_URL, json=payload, headers=headers, timeout=30)
         
-        print(f"📡 Réponse Groq: {response.status_code}")
+        print(f"📡 Réponse Mistral: {response.status_code}")
         
         if response.status_code == 200:
             data = response.json()
@@ -394,15 +365,21 @@ def call_groq(prompt: str) -> Optional[str]:
             if content:
                 return content
             else:
-                print("❌ Réponse vide de Groq")
+                print("❌ Réponse vide de Mistral")
                 return None
         else:
-            print(f"❌ Erreur Groq HTTP: {response.status_code} - {response.text}")
+            print(f"❌ Erreur Mistral: {response.status_code} - {response.text}")
             return None
             
     except Exception as e:
-        print(f"❌ Erreur Groq: {e}")
+        print(f"❌ Erreur Mistral: {e}")
         return None
+
+# Vérifier la clé
+if MISTRAL_API_KEY:
+    print("✅ Mistral API configurée avec succès !")
+else:
+    print("⚠️ MISTRAL_API_KEY non définie, le chatbot utilisera le mode basique.")
 # ==========================================
 # CHARGEMENT DU MODÈLE
 # ==========================================
@@ -801,50 +778,26 @@ def shap_analysis(medicine_id: str):
 # ==========================================
 # CHATBOT
 # ==========================================
-
 @app.post("/chat")
 def chat(request: ChatRequest):
-    """Chatbot intelligent avec Groq (HTTP direct)"""
+    """Chatbot intelligent avec Mistral LLM"""
     
-    # Si Groq n'est pas configuré, fallback basique
-    if not GROQ_API_KEY:
-        # Essayer d'abord avec l'intention
-        msg = request.message.lower().strip()
-        entities = extract_entities(msg)
-        intent = detect_intent(msg, entities)
-        
-        if intent == "stock":
-            result = handle_stock_query(entities)
-        elif intent == "rupture":
-            result = handle_rupture_query()
-        elif intent == "prevision":
-            result = handle_prediction_query(entities)
-        elif intent == "ca":
-            result = handle_revenue_query(entities)
-        elif intent == "expiration":
-            result = handle_expiration_query(entities)
-        elif intent == "commande":
-            result = handle_order_query(entities)
-        elif intent == "vente":
-            result = handle_sales_query(entities)
-        elif intent == "aide":
-            result = handle_help()
-        else:
-            result = handle_fallback(msg)
-        
-        result["timestamp"] = date.today().isoformat()
-        result["source"] = "fallback"
-        return result
+    # Fallback si Mistral n'est pas configuré
+    if not MISTRAL_API_KEY:
+        return {
+            "reply": "⚠️ Le chatbot avancé n'est pas disponible. Veuillez configurer MISTRAL_API_KEY.",
+            "timestamp": date.today().isoformat(),
+            "source": "fallback"
+        }
     
-    # Avec Groq
     try:
-        reply = call_groq(request.message)
+        reply = call_mistral(request.message)
         
         if reply:
             return {
                 "reply": reply,
                 "timestamp": date.today().isoformat(),
-                "source": "groq"
+                "source": "mistral"
             }
         else:
             return {
@@ -854,7 +807,7 @@ def chat(request: ChatRequest):
             }
         
     except Exception as e:
-        print(f"❌ Erreur Groq: {e}")
+        print(f"❌ Erreur Mistral: {e}")
         return {
             "reply": "❌ Désolé, une erreur est survenue. Veuillez réessayer.",
             "timestamp": date.today().isoformat(),
