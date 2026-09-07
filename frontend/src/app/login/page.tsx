@@ -80,18 +80,13 @@ export default function LoginPage() {
       <Card className="w-full max-w-md border-0 shadow-2xl bg-white/95 dark:bg-slate-800/95 backdrop-blur-sm relative z-10 dark:border dark:border-slate-700">
         <CardHeader className="text-center space-y-4">
           <div className="flex justify-center">
-            {/* Affichage conditionnel pour éviter l'hydratation */}
-            {mounted && logoUrl ? (
+            
               <img
                 src={'https://res.cloudinary.com/dyx3vcyzp/image/upload/v1788107048/logo.png'}
                 alt="Logo pharmacie"
                 className="w-35 h-35 rounded-2xl object-cover shadow-lg"
               />
-            ) : (
-              <div className="w-16 h-16 bg-gradient-to-br from-[#0ABAB5] to-blue-600 rounded-2xl flex items-center justify-center shadow-lg">
-                <Pill className="w-8 h-8 text-white" />
-              </div>
-            )}
+            
           </div>
           
           <CardDescription className="text-slate-500 dark:text-slate-400">Connexion à la plateforme</CardDescription>
