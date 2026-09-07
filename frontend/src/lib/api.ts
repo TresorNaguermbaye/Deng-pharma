@@ -99,6 +99,13 @@ class ApiClient {
   }
 
 
+
+
+
+  async getSiteSettings(): Promise<any> {
+    return this.request('/settings/settings/');
+  }
+
   // Ajouter dans la classe ApiClient
   async uploadLogo(formData: FormData): Promise<any> {
     return this.request('/settings/upload-logo/', {
@@ -110,9 +117,7 @@ class ApiClient {
     });
   }
 
-  async getSiteSettings(): Promise<any> {
-    return this.request('/settings/settings/');
-  }
+
   // ========== Médicaments ==========
   async getMedicines(params?: Record<string, string>) {
     let url = '/medicines/';
