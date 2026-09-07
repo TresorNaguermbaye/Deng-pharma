@@ -83,7 +83,7 @@ export default function LoginPage() {
             {/* Affichage conditionnel pour éviter l'hydratation */}
             {mounted && logoUrl ? (
               <img
-                src={logoUrl}
+                src={'https://res.cloudinary.com/dyx3vcyzp/image/upload/v1788107048/logo.png'}
                 alt="Logo pharmacie"
                 className="w-35 h-35 rounded-2xl object-cover shadow-lg"
               />
@@ -93,7 +93,7 @@ export default function LoginPage() {
               </div>
             )}
           </div>
-          <CardTitle className="text-2xl font-bold text-slate-800 dark:text-white">DENG PHARMA</CardTitle>
+          
           <CardDescription className="text-slate-500 dark:text-slate-400">Connexion à la plateforme</CardDescription>
         </CardHeader>
         <CardContent>

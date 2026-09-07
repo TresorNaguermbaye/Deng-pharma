@@ -96,7 +96,7 @@ const navItems = [
   { label: "Ventes", href: "/sales", icon: ShoppingCart },
   { label: "Rapports", href: "/reports", icon: FileBarChart }, 
   { label: "Analytics", href: "/analytics", icon: BarChart3 },
-  //{ label: "Chat IA", href: "/ai/chat", icon: Brain },
+ // { label: "Chat IA", href: "/ai/chat", icon: Brain },
   { label: "IA Prédictions", href: "/ai/predictions", icon: Brain },
   { label: "Notifications", href: "/notifications", icon: Bell },
   
@@ -161,10 +161,10 @@ const navItems = [
           <aside className="fixed left-0 top-0 bottom-0 w-64 bg-[#0F1A2C] text-white p-6 flex flex-col">
             <div className="flex items-center justify-between mb-8">
               <div className="flex items-center gap-3">
-                <div className="w-7 h-7  rounded-xl flex items-center justify-center font-bold text-xl"> 
-                  <img src={"https://res.cloudinary.com/dyx3vcyzp/image/upload/v1788107048/logo.png"} alt="Logo pharmacie"/>
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center font-bold text-xl">
+                  <img src={"https://res.cloudinary.com/dyx3vcyzp/image/upload/v1788107048/logo.png"} alt="Logo pharmacie" className={className} />
                 </div>
-                
+               
               </div>
               <Button variant="ghost" size="sm" onClick={() => setMobileMenuOpen(false)} className="text-white">
                 <X className="w-5 h-5" />
