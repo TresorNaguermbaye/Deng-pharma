@@ -255,12 +255,12 @@
       font-size: 18px;
     }
 
-    /* --- QR CODE (COMPACT) --- */
+    /* --- QR CODE (GRANDE TAILLE) --- */
     .qr-section {
       display: flex;
       align-items: center;
-      gap: 16px;
-      padding: 10px 0 6px;
+      gap: 20px;
+      padding: 12px 0 8px;
       margin-top: 10px;
       border-top: 2px solid #eef2f7;
     }
@@ -271,53 +271,53 @@
     }
 
     .qr-image {
-      width: 64px;
-      height: 64px;
-      border-radius: 8px;
+      width: 120px;
+      height: 120px;
+      border-radius: 10px;
       border: 2px solid #eef2f7;
-      padding: 4px;
+      padding: 6px;
     }
 
     .qr-label {
-      font-size: 6.5pt;
+      font-size: 7pt;
       color: #94a3b8;
-      margin-top: 2px;
+      margin-top: 4px;
     }
 
     .verification-info {
       flex: 1;
-      line-height: 1.3;
+      line-height: 1.4;
     }
 
     .verification-info .verify-label {
-      font-size: 9pt;
+      font-size: 10pt;
       font-weight: 600;
       color: #0ABAB5;
-      margin-bottom: 1px;
+      margin-bottom: 2px;
     }
 
     .verification-info .verify-code {
-      font-size: 8.5pt;
+      font-size: 9pt;
       color: #1a2332;
-      margin-bottom: 1px;
+      margin-bottom: 2px;
     }
 
     .verification-info .verify-code strong {
       font-family: 'Courier New', monospace;
       color: #0F1A2C;
       background: #f1f5f9;
-      padding: 0 6px;
+      padding: 0 8px;
       border-radius: 3px;
-      font-size: 8pt;
+      font-size: 9pt;
     }
 
     .verification-info .verify-hint {
-      font-size: 7pt;
+      font-size: 7.5pt;
       color: #94a3b8;
     }
 
     .verification-info .verify-url {
-      font-size: 7pt;
+      font-size: 7.5pt;
       color: #0ABAB5;
       word-break: break-all;
       font-family: 'Courier New', monospace;
@@ -365,10 +365,6 @@
       }
       .customer-info {
         padding: 4px 10px;
-      }
-      .qr-image {
-        width: 50px;
-        height: 50px;
       }
     }
 
@@ -422,6 +418,10 @@
       .footer .meta {
         text-align: center;
       }
+      .qr-image {
+        width: 100px;
+        height: 100px;
+      }
     }
 
     @media (max-width: 400px) {
@@ -441,6 +441,10 @@
       .items-table .col-lot { display: none; }
       .items-table thead th.col-lot { display: none; }
       .items-table tbody td.col-lot { display: none; }
+      .qr-image {
+        width: 80px;
+        height: 80px;
+      }
     }
   </style>
 </head>
@@ -496,6 +500,7 @@
 
   <!-- ============================================
        TABLEAU DES PRODUITS (COMPACT)
+       ✅ CORRECTION : total = quantité × prix unitaire
   ============================================ -->
   <table class="items-table">
     <thead>
@@ -520,7 +525,10 @@
         </td>
         <td class="col-qty product-quantity">{{ item.quantity }}</td>
         <td class="col-price">{{ item.unit_price|floatformat:0 }} FCFA</td>
-        <td class="col-total">{{ item.quantity|floatformat:0|add:item.unit_price|floatformat:0 }} FCFA</td>
+        <td class="col-total">
+          {# ✅ CALCUL CORRECT : quantité × prix unitaire #}
+          {{ item.quantity|floatformat:0|add:item.unit_price|floatformat:0 }} FCFA
+        </td>
       </tr>
       {% endfor %}
     </tbody>
@@ -549,16 +557,16 @@
   </div>
 
   <!-- ============================================
-       QR CODE + VÉRIFICATION (COMPACT)
+       QR CODE + VÉRIFICATION (GRANDE TAILLE)
   ============================================ -->
   <div class="qr-section">
     <div class="qr-container">
       <img src="data:image/png;base64,{{ qr_base64 }}" alt="QR Code" class="qr-image" />
-      <p class="qr-label">Scannez pour vérifier</p>
+      <p class="qr-label">Scannez pour vérifier l'authenticité</p>
     </div>
     <div class="verification-info">
       <p class="verify-label">🔒 Facture sécurisée</p>
-      <p class="verify-code">Code : <strong>{{ signature }}</strong></p>
+      <p class="verify-code">Code de vérification : <strong>{{ signature }}</strong></p>
       <p class="verify-hint">Scannez le QR Code ou rendez-vous sur</p>
       <p class="verify-url">{{ invoice_url }}</p>
     </div>
@@ -569,10 +577,10 @@
   ============================================ -->
   <div class="footer">
     <div class="thanks">
-      Merci, <strong>à bientôt !</strong>
+      Merci de votre confiance, <strong>à bientôt !</strong>
     </div>
     <div class="meta">
-      DENG PHARMA · N'Djaména
+      DENG PHARMA · N'Djaména · Tchad
     </div>
   </div>
 
