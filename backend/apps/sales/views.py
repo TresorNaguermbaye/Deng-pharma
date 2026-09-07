@@ -1,3 +1,4 @@
+# apps/sales/views.py
 from rest_framework import viewsets, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -5,7 +6,7 @@ from django.http import HttpResponse
 from django.template.loader import render_to_string
 from django.shortcuts import get_object_or_404
 from rest_framework.permissions import IsAuthenticated
-from rest_framework.permissions import AllowAny  # ← AJOUTER CETTE LIGNE
+from rest_framework.permissions import AllowAny
 from datetime import date
 import hashlib
 import hmac
@@ -13,6 +14,8 @@ import qrcode
 from io import BytesIO
 import base64
 from django.conf import settings
+from django.db import transaction
+from django.core.exceptions import ValidationError
 
 from apps.accounts.permissions import CanManageSales
 from .models import Sale, SaleItem
@@ -24,6 +27,7 @@ import logging
 
 # Configuration du logger
 logger = logging.getLogger(__name__)
+
 
 class CanCreateSale(permissions.BasePermission):
     """Permission : seul un AUDITEUR ne peut pas créer de vente"""
@@ -67,14 +71,19 @@ class SaleViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
 
+    @transaction.atomic
     def create(self, request, *args, **kwargs):
-        """Création d'une vente avec application FEFO"""
+        """
+        Création d'une vente avec application FEFO
+        ✅ CORRECTION : La décrémentation du stock est gérée UNIQUEMENT par le signal
+        """
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
         user = request.user
         data = serializer.validated_data
 
+        # 1. CRÉER LA VENTE
         sale = Sale.objects.create(
             user=user,
             customer_name=data.get('customer_name'),
@@ -86,25 +95,30 @@ class SaleViewSet(viewsets.ModelViewSet):
         total = 0
         items_data = data.get('items', [])
 
+        # 2. TRAITER CHAQUE ITEM
         for item_data in items_data:
             medicine = item_data.get('medicine')
             quantity = item_data.get('quantity')
             unit_price = item_data.get('unit_price')
 
-            # ✅ APPLICATION FEFO
+            # ✅ APPLICATION FEFO (First Expired First Out)
+            # Sélectionner le lot avec la date d'expiration la plus proche
+            # select_for_update() verrouille le lot pendant la transaction
             available_lot = StockLot.objects.filter(
                 medicine=medicine,
                 quantity__gt=0,
                 expiry_date__gte=date.today()
-            ).order_by('expiry_date').first()
+            ).select_for_update().order_by('expiry_date').first()
 
             if not available_lot:
+                # Annuler la vente si un produit n'est pas disponible
                 sale.delete()
                 return Response(
                     {"error": f"Aucun lot disponible pour {medicine.commercial_name}"},
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
+            # 3. CRÉER L'ITEM DE VENTE
             SaleItem.objects.create(
                 sale=sale,
                 medicine=medicine,
@@ -113,9 +127,12 @@ class SaleViewSet(viewsets.ModelViewSet):
                 unit_price=unit_price
             )
 
-            available_lot.quantity -= quantity
-            available_lot.save()
-
+            # 4. CRÉER LE MOUVEMENT DE STOCK
+            # ✅ UNIQUEMENT le mouvement de stock (pas de décrémentation manuelle)
+            # Le signal post_save de StockMovement va :
+            #    - Décrémenter le stock (lot.quantity -= quantity)
+            #    - Déclencher les notifications (rupture, stock faible)
+            #    - Envoyer les emails et push notifications
             StockMovement.objects.create(
                 medicine=medicine,
                 lot=available_lot,
@@ -125,13 +142,16 @@ class SaleViewSet(viewsets.ModelViewSet):
                 reference=f"Vente #{sale.id}",
                 performed_by=user
             )
+            
+            logger.info(f"✅ Vente #{sale.id} - {medicine.commercial_name}: {quantity} unités sorties")
 
             total += quantity * unit_price
 
+        # 5. METTRE À JOUR LE TOTAL
         sale.total_amount = total - sale.discount
         sale.save()
 
-        # ✅ Récupérer les détails FEFO
+        # 6. RÉCUPÉRER LES DÉTAILS FEFO POUR LA RÉPONSE
         sale_items = SaleItem.objects.filter(sale=sale)
         lot_details = []
         for item in sale_items:
@@ -143,9 +163,13 @@ class SaleViewSet(viewsets.ModelViewSet):
                 "remaining_stock": item.lot.quantity if item.lot else 0
             })
 
+        logger.info(f"✅ Vente #{sale.id} créée avec succès - Total: {sale.total_amount} FCFA")
+
         return Response({
             "id": sale.id,
             "total": sale.total_amount,
+            "discount": sale.discount,
+            "payment_method": sale.payment_method,
             "lot_details": lot_details
         }, status=status.HTTP_201_CREATED)
 
@@ -205,6 +229,7 @@ class SaleViewSet(viewsets.ModelViewSet):
         response = HttpResponse(pdf_file, content_type='application/pdf')
         response['Content-Disposition'] = f'attachment; filename="facture_{sale.id}.pdf"'
         return response
+
 
 class VerifyInvoiceView(APIView):
     """Vue pour vérifier l'authenticité d'une facture"""
