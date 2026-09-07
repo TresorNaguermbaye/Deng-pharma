@@ -128,7 +128,8 @@ const navItems = [
       )}
 
       {/* Contenu principal : aucun espace inutile sur mobile */}
-      <main className="pt-20 lg:pl-64 p-4 md:p-8 space-y-6">
+      
+      <main className="pt-20 lg:pl-64 p-4 md:p-8 space-y-8"></main>
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">Médicaments</h1>
