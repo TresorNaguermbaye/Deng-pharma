@@ -54,8 +54,7 @@ INSTALLED_APPS = [
     'apps.audit',
     'apps.ai_integration',
     'apps.settings',
-    'cloudinary_storage',
-]
+    
 
 AUTH_USER_MODEL = 'accounts.User'
 
@@ -121,6 +120,16 @@ STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+
+# ✅ CRÉER LES DOSSIERS MEDIA AU DÉMARRAGE
+if not os.path.exists(MEDIA_ROOT):
+    os.makedirs(MEDIA_ROOT, exist_ok=True)
+    
+logos_dir = os.path.join(MEDIA_ROOT, 'logos')
+if not os.path.exists(logos_dir):
+    os.makedirs(logos_dir, exist_ok=True)
+
 
 # ========== REST FRAMEWORK ==========
 REST_FRAMEWORK = {
@@ -190,11 +199,11 @@ LOGGING = {
 
 # ========== CLOUDINARY CONFIGURATION ==========
 
-cloudinary.config(
-    cloud_name=os.getenv('CLOUDINARY_CLOUD_NAME'),
-    api_key=os.getenv('CLOUDINARY_API_KEY'),
-    api_secret=os.getenv('CLOUDINARY_API_SECRET'),
-)
+#cloudinary.config(
+ #   cloud_name=os.getenv('CLOUDINARY_CLOUD_NAME'),
+  #  api_key=os.getenv('CLOUDINARY_API_KEY'),
+   # api_secret=os.getenv('CLOUDINARY_API_SECRET'),
 
-# Utiliser Cloudinary pour les fichiers médias
-DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
+
+# ✅ Utiliser le stockage LOCAL
+DEFAULT_FILE_STORAGE = 'django.core.files.storage.FileSystemStorage'

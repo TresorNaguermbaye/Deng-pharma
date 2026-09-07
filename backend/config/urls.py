@@ -26,7 +26,15 @@ urlpatterns = [
     path('api/ai/', include('apps.ai_integration.urls')),
     path('api/orders/', include('apps.orders.urls')),
     path('api/notifications/', include('apps.notifications.urls')),
+    path('api/settings/', include('apps.settings.urls')), 
 ]
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
     urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
+
+# ✅ SERVIR LES FICHIERS MEDIA AVEC DJANGO EN PRODUCTION
+if not settings.DEBUG:
+    urlpatterns += [
+        path('media/<path:path>/', serve, {'document_root': settings.MEDIA_ROOT}),
+        path('static/<path:path>/', serve, {'document_root': settings.STATIC_ROOT}),
+    ]
