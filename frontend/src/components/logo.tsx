@@ -2,11 +2,11 @@
 
 import { useEffect, useState } from "react";
 
-export default function Logo({ className = "w-9 h-9 rounded-xl object-cover" }: { className?: string }) {
+export default function Logo({ className = "w-8 h-8 rounded-xl object-cover" }: { className?: string }) {
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch('https://res.cloudinary.com/dyx3vcyzp/image/upload/v1788107048/logo.png')
+    fetch('http://127.0.0.1:8000/api/auth/pharmacy-logo/')
       .then((res) => res.json())
       .then((data) => setLogoUrl(data.logo_url))
       .catch(() => setLogoUrl(null));
