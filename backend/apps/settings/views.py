@@ -4,8 +4,6 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
-from django.core.files.storage import default_storage
-from django.core.files.base import ContentFile
 from .models import SiteSettings
 import logging
 
@@ -17,10 +15,10 @@ class UploadLogoView(APIView):
     permission_classes = [IsAuthenticated]
     
     def post(self, request):
-        # ✅ LOG pour déboguer
         logger.info(f"📤 Upload logo - Utilisateur: {request.user.email}")
-        logger.info(f"📤 Fichiers reçus: {request.FILES.keys()}")
-        logger.info(f"📤 Données reçues: {request.data.keys()}")
+        logger.info(f"📤 Fichiers reçus: {request.FILES}")
+        logger.info(f"📤 Données reçues: {request.data}")
+        logger.info(f"📤 Content-Type: {request.content_type}")
         
         # Vérifier les permissions
         if not request.user.is_staff and request.user.role != 'ADMIN':
@@ -33,20 +31,19 @@ class UploadLogoView(APIView):
         # ✅ Vérifier si le fichier est dans request.FILES
         image_file = request.FILES.get('logo')
         if not image_file:
-            logger.warning("❌ Aucun fichier trouvé dans la requête")
+            logger.error("❌ Aucun fichier trouvé - request.FILES est vide")
             return Response(
                 {'error': 'Aucun fichier fourni. Assurez-vous d\'utiliser le champ "logo" dans FormData.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
+        logger.info(f"✅ Fichier reçu: {image_file.name}, taille: {image_file.size}, type: {image_file.content_type}")
+        
         # ✅ Vérifier le type de fichier
         allowed_types = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp', 'image/svg+xml']
-        content_type = image_file.content_type
-        logger.info(f"📄 Type de fichier: {content_type}")
-        
-        if content_type not in allowed_types:
+        if image_file.content_type not in allowed_types:
             return Response(
-                {'error': f'Format non supporté: {content_type}. Utilisez: {", ".join(allowed_types)}'},
+                {'error': f'Format non supporté: {image_file.content_type}. Utilisez PNG, JPG, GIF ou WEBP'},
                 status=status.HTTP_400_BAD_REQUEST
             )
         

@@ -1,6 +1,6 @@
+// frontend/lib/api.ts
 
 const DJANGO_API = process.env.NEXT_PUBLIC_API_URL || 'https://deng-pharma-backend.onrender.com/api';
-
 
 class ApiClient {
   private token: string | null = null;
@@ -16,39 +16,66 @@ class ApiClient {
     return null;
   }
 
+  // ✅ CORRECTION : Gérer le FormData correctement
   private async request(endpoint: string, options: RequestInit = {}) {
     const token = this.getToken();
-    const headers: HeadersInit = { 'Content-Type': 'application/json', ...options.headers };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
+    
+    // ✅ Ne pas définir Content-Type si c'est un FormData
+    const isFormData = options.body instanceof FormData;
+    
+    const headers: HeadersInit = { ...options.headers };
+    
+    // ✅ Ajouter Content-Type UNIQUEMENT si ce n'est pas du FormData
+    if (!isFormData) {
+      headers['Content-Type'] = 'application/json';
+    }
+    
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    
     const url = `${DJANGO_API}${endpoint}`;
-    const response = await fetch(url, { ...options, headers });
+    
+    // ✅ Pour FormData, ne pas modifier le body
+    let body = options.body;
+    if (!isFormData && body && typeof body === 'object' && !(body instanceof FormData)) {
+      body = JSON.stringify(body);
+    }
+    
+    const response = await fetch(url, { 
+      ...options, 
+      headers,
+      body: body as BodyInit,
+    });
+    
     if (response.status === 401) {
       localStorage.removeItem('auth_token');
       this.token = null;
       window.location.href = '/login';
       throw new Error('Non authentifié');
     }
+    
     if (response.status === 204) return { success: true };
     return response.json();
   }
 
   // ========== Authentification ==========
   async login(username: string, password: string) {
-  console.log('🔐 Tentative de login...');
-  const data = await this.request('/auth/token/', {
-    method: 'POST',
-    body: JSON.stringify({ username, password }),
-  });
-  console.log('📦 Données reçues:', data);
-  if (data.access) {
-    console.log('✅ Token trouvé, stockage...');
-    this.setToken(data.access);
-    console.log('💾 Token après stockage:', localStorage.getItem('auth_token'));
-  } else {
-    console.log('❌ Pas de token dans la réponse');
+    console.log('🔐 Tentative de login...');
+    const data = await this.request('/auth/token/', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    });
+    console.log('📦 Données reçues:', data);
+    if (data.access) {
+      console.log('✅ Token trouvé, stockage...');
+      this.setToken(data.access);
+      console.log('💾 Token après stockage:', localStorage.getItem('auth_token'));
+    } else {
+      console.log('❌ Pas de token dans la réponse');
+    }
+    return data;
   }
-  return data;
-}
 
   async getMe() {
     return this.request('/auth/me/');
@@ -92,31 +119,23 @@ class ApiClient {
     });
   }
 
-
-
   async getInventorySummary() {
     return this.request('/inventory/summary/');
   }
 
-
-
-
-
+  // ✅ Récupérer les paramètres du site
   async getSiteSettings(): Promise<any> {
     return this.request('/settings/settings/');
   }
 
-  // Ajouter dans la classe ApiClient
+  // ✅ Upload du logo - CORRECT
   async uploadLogo(formData: FormData): Promise<any> {
     return this.request('/settings/upload-logo/', {
       method: 'POST',
       body: formData,
-      headers: {
-        // Ne pas définir Content-Type pour les FormData
-      },
+      // ✅ PAS de headers Content-Type - le navigateur gère
     });
   }
-
 
   // ========== Médicaments ==========
   async getMedicines(params?: Record<string, string>) {
@@ -151,32 +170,28 @@ class ApiClient {
     return this.request('/sales/sales/', { method: 'POST', body: JSON.stringify(data) });
   }
 
+  // ========== Factures ==========
+  async downloadInvoice(saleId: number): Promise<Blob> {
+    const token = this.getToken();
+    if (!token) throw new Error('Non authentifié');
 
-// ========== Factures ==========
-async downloadInvoice(saleId: number): Promise<Blob> {
-  const token = this.getToken();
-  if (!token) throw new Error('Non authentifié');
+    const url = `${DJANGO_API}/sales/sales/${saleId}/invoice/`;
 
-  const url = `${DJANGO_API}/sales/sales/${saleId}/invoice/`;
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
 
-  const response = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+    if (response.status === 401) {
+      window.location.href = "/login";
+      throw new Error("Session expirée");
+    }
 
-  if (response.status === 401) {
-    window.location.href = "/login";
-    throw new Error("Session expirée");
+    if (!response.ok) {
+      throw new Error("Erreur lors du téléchargement");
+    }
+
+    return response.blob();
   }
-
-  if (!response.ok) {
-    throw new Error("Erreur lors du téléchargement");
-  }
-
-  return response.blob();
-}
-
-
-
 
   // ========== Analytics / Dashboard ==========
   async getDashboardKPIs() {
@@ -289,34 +304,32 @@ async downloadInvoice(saleId: number): Promise<Blob> {
   }
 
   // ========== Rapports ==========
- 
   async downloadReport(kind: string, format: 'pdf' | 'excel', params?: Record<string, string>) {
-  const token = this.getToken();
-  if (!token) throw new Error('Non authentifié');
+    const token = this.getToken();
+    if (!token) throw new Error('Non authentifié');
 
-  const query = new URLSearchParams({ format, ...params }).toString();
-  const url = `${DJANGO_API}/reports/${kind}/?${query}`;
+    const query = new URLSearchParams({ format, ...params }).toString();
+    const url = `${DJANGO_API}/reports/${kind}/?${query}`;
 
-  const response = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
 
-  if (!response.ok) {
-    let detail = `Erreur ${response.status}`;
-    try {
-      const errorBody = await response.json();
-      detail = errorBody.detail || errorBody.error || JSON.stringify(errorBody);
-    } catch {
-      const text = await response.text();
-      detail = text.slice(0, 200);
+    if (!response.ok) {
+      let detail = `Erreur ${response.status}`;
+      try {
+        const errorBody = await response.json();
+        detail = errorBody.detail || errorBody.error || JSON.stringify(errorBody);
+      } catch {
+        const text = await response.text();
+        detail = text.slice(0, 200);
+      }
+      console.error(`Erreur ${response.status} pour ${kind}:`, detail);
+      throw new Error(`Erreur ${response.status}: ${detail}`);
     }
-    console.error(`Erreur ${response.status} pour ${kind}:`, detail);
-    throw new Error(`Erreur ${response.status}: ${detail}`);
-  }
 
-  return response.blob();
+    return response.blob();
   }
-
 
   // ========== Recherche globale ==========
   async globalSearch(query: string) {
@@ -335,20 +348,18 @@ async downloadInvoice(saleId: number): Promise<Blob> {
     });
   }
 
-
   async requestPasswordReset(email: string) {
-  return this.request('/auth/password-reset/', {
-    method: 'POST',
-    body: JSON.stringify({ email }),
-  });
+    return this.request('/auth/password-reset/', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
   }
 
-
   async confirmPasswordReset(uid: string, token: string, newPassword: string) {
-  return this.request('/auth/password-reset/confirm/', {
-    method: 'POST',
-    body: JSON.stringify({ uid, token, new_password: newPassword }),
-  });
+    return this.request('/auth/password-reset/confirm/', {
+      method: 'POST',
+      body: JSON.stringify({ uid, token, new_password: newPassword }),
+    });
   }
 
   async getOrders() {

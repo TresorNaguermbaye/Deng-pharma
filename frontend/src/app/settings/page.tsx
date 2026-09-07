@@ -195,31 +195,47 @@ export default function SettingsPage() {
     reader.readAsDataURL(file);
   };
 
-  const handleLogoUpload = async () => {
-    if (!logoFile) {
-      toast.error('Veuillez sélectionner un fichier');
-      return;
-    }
+  // Dans settings/page.tsx - handleLogoUpload
 
-    const formData = new FormData();
-    formData.append('logo', logoFile);
+const handleLogoUpload = async () => {
+  if (!logoFile) {
+    toast.error('Veuillez sélectionner un fichier');
+    return;
+  }
 
-    setLogoUploading(true);
-    try {
-      const response = await api.uploadLogo(formData);
-      if (response.success) {
-        toast.success('Logo mis à jour avec succès !');
-        setLogoFile(null);
-        setLogoPreview(null);
-        refetchSettings(); // Rafraîchir les données
-        // Rafraîchir la page après 1 seconde
-        setTimeout(() => window.location.reload(), 1500);
-      }
-    } catch (error: any) {
-      toast.error(error.response?.data?.error || 'Erreur lors de l\'upload');
-    } finally {
-      setLogoUploading(false);
+  // ✅ Vérifier le type
+  const allowedTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp'];
+  if (!allowedTypes.includes(logoFile.type)) {
+    toast.error('Format non supporté. Utilisez PNG, JPG, GIF ou WEBP');
+    return;
+  }
+
+  // ✅ Vérifier la taille
+  if (logoFile.size > 5 * 1024 * 1024) {
+    toast.error('Le fichier ne doit pas dépasser 5MB');
+    return;
+  }
+
+  // ✅ Créer FormData
+  const formData = new FormData();
+  formData.append('logo', logoFile);
+
+  setLogoUploading(true);
+  try {
+    const response = await api.uploadLogo(formData);
+    if (response.success) {
+      toast.success('Logo mis à jour avec succès !');
+      setLogoFile(null);
+      setLogoPreview(null);
+      await refetchSettings();
+      setTimeout(() => window.location.reload(), 1500);
     }
+  } catch (error: any) {
+    console.error('Upload error:', error);
+    toast.error(error.response?.data?.error || 'Erreur lors de l\'upload');
+  } finally {
+    setLogoUploading(false);
+  }
   };
 
   const handleTrainModel = async () => {
