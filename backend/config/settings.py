@@ -53,7 +53,7 @@ INSTALLED_APPS = [
     'apps.notifications',
     'apps.audit',
     'apps.ai_integration',
-
+    'apps.settings',
     'cloudinary_storage',
 ]
 
