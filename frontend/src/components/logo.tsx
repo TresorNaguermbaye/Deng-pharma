@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-export default function Logo({ className = "w-10 h-10 rounded-xl object-cover" }: { className?: string }) {
+export default function Logo({ className = "w-9 h-9 rounded-xl object-cover" }: { className?: string }) {
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
 
   useEffect(() => {
