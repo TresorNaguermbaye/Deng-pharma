@@ -99,21 +99,20 @@ class ApiClient {
   }
 
 
-  async uploadPhoto(formData: FormData) {
-    const token = this.getToken();
-    if (!token) throw new Error('Non authentifié');
-    const url = `${DJANGO_API}/auth/upload-photo/`;
-    const response = await fetch(url, {
+  // Ajouter dans la classe ApiClient
+  async uploadLogo(formData: FormData): Promise<any> {
+    return this.request('/settings/upload-logo/', {
       method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
       body: formData,
+      headers: {
+        // Ne pas définir Content-Type pour les FormData
+      },
     });
-    if (!response.ok) {
-      throw new Error('Erreur lors de l\'upload');
-    }
-    return response.json();
   }
 
+  async getSiteSettings(): Promise<any> {
+    return this.request('/settings/settings/');
+  }
   // ========== Médicaments ==========
   async getMedicines(params?: Record<string, string>) {
     let url = '/medicines/';

@@ -24,9 +24,10 @@ import { Topbar } from "@/components/layout/Topbar";
 import { Sidebar } from "@/components/layout/Sidebar";
 import {
   Menu, X, Brain, Target, AlertTriangle, Activity, TrendingUp, BarChart3,
-  LayoutDashboard, Pill, Package, ShoppingCart, FileBarChart, Bell, Users, LogOut
+  LayoutDashboard, Pill, Package, ShoppingCart, FileBarChart, Bell, Users, LogOut,
+  Upload, Image, Settings as SettingsIcon // <-- Ajout des icônes
 } from "lucide-react";
-import { subscribeToPush } from "@/lib/push"; // <-- import ajouté
+import { subscribeToPush } from "@/lib/push";
 
 const profileSchema = z.object({
   first_name: z.string().min(2, "Prénom requis"),
@@ -69,11 +70,22 @@ export default function SettingsPage() {
   const [trainingLoading, setTrainingLoading] = useState(false);
   const [trainingMessage, setTrainingMessage] = useState<string | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  
+  // ✅ ÉTAT POUR LE LOGO
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [logoUploading, setLogoUploading] = useState(false);
 
   // Récupérer le profil utilisateur
   const { data: me, isLoading: meLoading } = useQuery({
     queryKey: ["me"],
     queryFn: () => api.getMe(),
+  });
+
+  // ✅ Récupérer les paramètres du site (logo, nom, slogan, etc.)
+  const { data: siteSettings, refetch: refetchSettings } = useQuery({
+    queryKey: ["site-settings"],
+    queryFn: () => api.getSiteSettings(),
   });
 
   // Récupérer les médicaments
@@ -157,6 +169,59 @@ export default function SettingsPage() {
     }
   };
 
+  // ✅ GESTION DU LOGO
+  const handleLogoChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Vérifier le type
+    const allowedTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp'];
+    if (!allowedTypes.includes(file.type)) {
+      toast.error('Format non supporté. Utilisez PNG, JPG, GIF ou WEBP');
+      return;
+    }
+
+    // Vérifier la taille (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Le fichier ne doit pas dépasser 5MB');
+      return;
+    }
+
+    setLogoFile(file);
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setLogoPreview(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleLogoUpload = async () => {
+    if (!logoFile) {
+      toast.error('Veuillez sélectionner un fichier');
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('logo', logoFile);
+
+    setLogoUploading(true);
+    try {
+      const response = await api.uploadLogo(formData);
+      if (response.success) {
+        toast.success('Logo mis à jour avec succès !');
+        setLogoFile(null);
+        setLogoPreview(null);
+        refetchSettings(); // Rafraîchir les données
+        // Rafraîchir la page après 1 seconde
+        setTimeout(() => window.location.reload(), 1500);
+      }
+    } catch (error: any) {
+      toast.error(error.response?.data?.error || 'Erreur lors de l\'upload');
+    } finally {
+      setLogoUploading(false);
+    }
+  };
+
   const handleTrainModel = async () => {
     setTrainingLoading(true);
     setTrainingMessage(null);
@@ -194,7 +259,7 @@ export default function SettingsPage() {
     router.push("/login");
   };
 
-  // Navigation locale pour la sidebar mobile (identique aux autres pages)
+  // Navigation locale pour la sidebar mobile
   const navItems = [
     { label: "Dashboard", href: "/", icon: LayoutDashboard },
     { label: "Médicaments", href: "/medicines", icon: Pill },
@@ -361,14 +426,89 @@ export default function SettingsPage() {
             </Card>
           </TabsContent>
 
-          {/* Onglet Préférences */}
+          {/* ============================================
+              ONGLET PRÉFÉRENCES (AVEC UPLOAD LOGO)
+              ============================================ */}
           <TabsContent value="preferences" className="mt-6">
             <Card className="border-0 shadow-md rounded-2xl bg-white dark:bg-slate-800">
               <CardHeader>
                 <CardTitle className="text-slate-900 dark:text-white">Préférences</CardTitle>
-                <CardDescription>Personnalisez votre expérience.</CardDescription>
+                <CardDescription>Personnalisez votre expérience et le logo de la pharmacie.</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-6">
+              <CardContent className="space-y-8">
+                {/* ✅ SECTION LOGO */}
+                <div className="border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+                  <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+                    <Image className="w-5 h-5 text-[#0ABAB5]" />
+                    Logo de la pharmacie
+                  </h3>
+                  
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6">
+                    {/* Aperçu du logo */}
+                    <div className="w-32 h-32 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-xl flex items-center justify-center overflow-hidden bg-slate-50 dark:bg-slate-700 flex-shrink-0">
+                      {logoPreview ? (
+                        <img src={logoPreview} alt="Aperçu" className="w-full h-full object-contain" />
+                      ) : siteSettings?.logo_url ? (
+                        <img src={siteSettings.logo_url} alt="Logo actuel" className="w-full h-full object-contain" />
+                      ) : (
+                        <div className="text-center text-slate-400 dark:text-slate-500">
+                          <Image className="w-8 h-8 mx-auto mb-1" />
+                          <span className="text-xs">Aucun logo</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex-1 space-y-3">
+                      <div className="flex flex-col sm:flex-row gap-3">
+                        <label className="cursor-pointer flex-1">
+                          <span className="flex items-center justify-center gap-2 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-lg px-4 py-2 text-sm text-slate-600 dark:text-slate-300 hover:border-[#0ABAB5] hover:text-[#0ABAB5] transition-colors">
+                            <Upload className="w-4 h-4" />
+                            Choisir une image
+                          </span>
+                          <input
+                            type="file"
+                            accept="image/png,image/jpeg,image/jpg,image/gif,image/webp"
+                            className="hidden"
+                            onChange={handleLogoChange}
+                          />
+                        </label>
+                        
+                        <Button
+                          onClick={handleLogoUpload}
+                          disabled={!logoFile || logoUploading}
+                          className={`flex-1 sm:flex-none ${
+                            !logoFile || logoUploading
+                              ? 'bg-slate-300 dark:bg-slate-600 cursor-not-allowed'
+                              : 'bg-[#0ABAB5] hover:bg-[#0a9e99] text-white'
+                          }`}
+                        >
+                          {logoUploading ? (
+                            <>
+                              <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                              </svg>
+                              Upload...
+                            </>
+                          ) : (
+                            'Uploader le logo'
+                          )}
+                        </Button>
+                      </div>
+                      
+                      <p className="text-xs text-slate-400 dark:text-slate-500">
+                        Formats acceptés : PNG, JPG, GIF, WEBP · Taille max : 5MB
+                        {siteSettings?.logo_url && (
+                          <span className="block mt-1 text-green-600 dark:text-green-400">
+                            ✅ Logo actuel : {siteSettings.logo_url.split('/').pop()}
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Paramètres existants */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
                     <Label className="text-slate-700 dark:text-slate-300">Langue</Label>
@@ -402,6 +542,7 @@ export default function SettingsPage() {
                     </Select>
                   </div>
                 </div>
+
                 <div className="flex items-center justify-between">
                   <div>
                     <Label className="text-slate-700 dark:text-slate-300">Notifications par email</Label>
@@ -412,6 +553,7 @@ export default function SettingsPage() {
                     onCheckedChange={(checked) => profileForm.setValue("email_notifications", checked)}
                   />
                 </div>
+
                 <div className="flex items-center justify-between">
                   <div>
                     <Label className="text-slate-700 dark:text-slate-300">Notifications push</Label>
@@ -423,7 +565,6 @@ export default function SettingsPage() {
                   />
                 </div>
 
-                {/* Nouveau bouton pour activer réellement les notifications push */}
                 <div className="pt-2">
                   <Button
                     type="button"
@@ -441,7 +582,7 @@ export default function SettingsPage() {
             </Card>
           </TabsContent>
 
-          {/* Onglet IA */}
+          {/* Onglet IA (inchangé) */}
           {me?.role === "ADMIN" && (
             <TabsContent value="ai" className="mt-6">
               <Card className="border-0 shadow-md rounded-2xl bg-white dark:bg-slate-800 overflow-hidden">

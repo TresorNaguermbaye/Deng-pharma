@@ -6,7 +6,7 @@ export default function Logo({ className = "w-10 h-10 rounded-xl object-cover" }
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch('http://127.0.0.1:8000/api/auth/pharmacy-logo/')
+    fetch('https://res.cloudinary.com/dyx3vcyzp/image/upload/v1788107048/logo.png')
       .then((res) => res.json())
       .then((data) => setLogoUrl(data.logo_url))
       .catch(() => setLogoUrl(null));
