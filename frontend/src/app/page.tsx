@@ -96,7 +96,7 @@ const navItems = [
   { label: "Ventes", href: "/sales", icon: ShoppingCart },
   { label: "Rapports", href: "/reports", icon: FileBarChart }, 
   { label: "Analytics", href: "/analytics", icon: BarChart3 },
-  { label: "Chat IA", href: "/ai/chat", icon: Brain },
+  //{ label: "Chat IA", href: "/ai/chat", icon: Brain },
   { label: "IA Prédictions", href: "/ai/predictions", icon: Brain },
   { label: "Notifications", href: "/notifications", icon: Bell },
   
