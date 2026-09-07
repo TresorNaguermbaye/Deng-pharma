@@ -183,6 +183,12 @@ class SaleViewSet(viewsets.ModelViewSet):
     def generate_pdf(self, sale):
         """Génère la facture PDF avec QR Code et signature"""
         items = sale.items.all()
+
+        # ✅ AJOUTER ICI : Calcul du total pour chaque item
+        for item in items:
+            item.total = item.quantity * item.unit_price
+    
+
         subtotal = sum(item.quantity * item.unit_price for item in items)
         total = sale.total_amount
         discount = subtotal - total
