@@ -16,7 +16,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [logoUrl, setLogoUrl] = useState<string | null>('https://res.cloudinary.com/dyx3vcyzp/image/upload/v1788107048/logo.png');
   const [rememberMe, setRememberMe] = useState(false);
   const [mounted, setMounted] = useState(false); // 👈 nouvel état pour l'hydratation
 
