@@ -19,7 +19,7 @@ export default function Logo({ className = "w-8 h-8 rounded-xl object-cover" }: 
   // Fallback
   return (
     <div className={`${className} bg-[#0ABAB5] flex items-center justify-center font-bold text-white`}>
-      A
+      <img src={"https://res.cloudinary.com/dyx3vcyzp/image/upload/v1788107048/logo.png"} alt="Logo pharmacie" className={className} />
     </div>
   );
 }
