@@ -29,6 +29,7 @@ FRONTEND_URL = config('FRONTEND_URL', default='http://localhost:3000')
 
 # ========== INSTALLED APPS ==========
 INSTALLED_APPS = [
+    'corsheaders',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -39,7 +40,7 @@ INSTALLED_APPS = [
     # Tiers
     'rest_framework',
     'rest_framework_simplejwt',
-    'corsheaders',
+    
     'django_filters',
     
     # Apps locales
@@ -160,6 +161,7 @@ SIMPLE_JWT = {
 # ========== CORS ==========
 CORS_ALLOWED_ORIGINS = config('CORS_ALLOWED_ORIGINS', default='http://localhost:3000,https://deng-pharma-frontend.onrender.com').split(',')
 CORS_ALLOW_CREDENTIALS = True
+
 
 # ========== EMAIL ==========
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'

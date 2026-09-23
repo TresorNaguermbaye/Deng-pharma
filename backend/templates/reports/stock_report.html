@@ -91,7 +91,8 @@
     <!-- En-tête pharmacie -->
     <div class="header">
         {% if pharmacy.logo_url %}
-            <img src="{{ pharmacy.logo_url }}" alt="Logo" class="logo" />
+            <img src="{{ pharmacy.logo_url }}" alt="" class="logo" />
+            <img src={"https://res.cloudinary.com/dyx3vcyzp/image/upload/v1788107048/logo.png"} alt="" className={className} />
         {% else %}
             <div class="logo-placeholder">D</div>
         {% endif %}
