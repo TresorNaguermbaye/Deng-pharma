@@ -22,6 +22,7 @@ const navItems = [
   { label: "Notifications", href: "/notifications", icon: Bell },
   
   { label: "Utilisateurs", href: "/admin/users", icon: Users },
+  { label: "Explicabilité SHAP", href: "/ai/shap", icon: Brain },
 ];
 
 export function Sidebar() {

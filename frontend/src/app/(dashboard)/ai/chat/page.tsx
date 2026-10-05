@@ -122,103 +122,153 @@ export default function ChatPage() {
         </div>
       )}
 
-      {/* Contenu principal */}
-      <main className="pt-20 lg:pl-64 p-4 md:p-8 space-y-6">
-        <div className="space-y-4 h-[calc(100vh-10rem)] flex flex-col">
-          <div>
-            <h1 className="text-3xl font-bold text-slate-900 dark:text-white flex items-center gap-3 tracking-tight">
-              <Brain className="w-8 h-8 text-[#0ABAB5]" /> Assistant IA
-            </h1>
-            <p className="text-slate-500 dark:text-slate-400 mt-1">
-              Posez vos questions sur la gestion de votre pharmacie
-            </p>
-          </div>
+      <main className="pt-20 lg:pl-64 min-h-screen">
+  <div className="px-4 md:px-8 py-6">
+    <div className="w-full max-w-5xl mx-auto h-[calc(100vh-10rem)] flex flex-col gap-4">
 
-          <Card className="flex-1 border-0 shadow-md dark:bg-slate-800 dark:border-slate-700 overflow-hidden flex flex-col">
-            <CardContent className="flex-1 overflow-y-auto p-6 space-y-4">
-              {messages.map((msg, i) => (
-                <div key={i} className={`flex gap-3 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                  {msg.role === "assistant" && (
-                    <div className="w-8 h-8 bg-gradient-to-br from-[#0ABAB5] to-blue-600 rounded-full flex items-center justify-center">
-                      <Bot className="w-4 h-4 text-white" />
-                    </div>
-                  )}
-                  <div
-                    className={`max-w-[70%] rounded-2xl px-4 py-3 ${
-                      msg.role === "user"
-                        ? "bg-gradient-to-r from-[#0ABAB5] to-blue-600 text-white"
-                        : "bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-white"
-                    }`}
-                  >
-                    <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
-                    <p className={`text-xs mt-1 ${msg.role === "user" ? "text-white/70" : "text-slate-400 dark:text-slate-400"}`}>
-                      {msg.timestamp.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
-                    </p>
-                  </div>
-                  {msg.role === "user" && (
-                    <div className="w-8 h-8 bg-slate-300 dark:bg-slate-600 rounded-full flex items-center justify-center">
-                      <User className="w-4 h-4 text-slate-600 dark:text-slate-200" />
-                    </div>
-                  )}
-                </div>
-              ))}
-              {loading && (
-                <div className="flex gap-3">
-                  <div className="w-8 h-8 bg-gradient-to-br from-[#0ABAB5] to-blue-600 rounded-full flex items-center justify-center">
-                    <Bot className="w-4 h-4 text-white" />
-                  </div>
-                  <div className="bg-slate-100 dark:bg-slate-700 rounded-2xl px-4 py-3">
-                    <div className="flex gap-1">
-                      <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" />
-                      <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: "0.1s" }} />
-                      <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: "0.2s" }} />
-                    </div>
-                  </div>
+      {/* Header */}
+      <div className="shrink-0">
+        <h1 className="text-3xl font-bold text-slate-900 dark:text-white flex items-center gap-3 tracking-tight">
+          <Brain className="w-8 h-8 text-[#0ABAB5]" />
+          Assistant IA
+        </h1>
+
+        <p className="text-slate-500 dark:text-slate-400 mt-1">
+          Posez vos questions sur la gestion de votre pharmacie
+        </p>
+      </div>
+
+      {/* Chat */}
+      <Card className="w-full flex-1 min-h-0 border-0 shadow-md dark:bg-slate-800 overflow-hidden flex flex-col">
+
+        {/* Messages */}
+        <CardContent className="flex-1 min-h-0 overflow-y-auto p-6 space-y-4">
+
+          {messages.map((msg, i) => (
+            <div
+              key={i}
+              className={`flex gap-3 ${
+                msg.role === "user"
+                  ? "justify-end"
+                  : "justify-start"
+              }`}
+            >
+
+              {msg.role === "assistant" && (
+                <div className="w-8 h-8 shrink-0 bg-gradient-to-br from-[#0ABAB5] to-blue-600 rounded-full flex items-center justify-center">
+                  <Bot className="w-4 h-4 text-white" />
                 </div>
               )}
-              <div ref={messagesEndRef} />
-            </CardContent>
 
-            {messages.length <= 1 && (
-              <div className="px-6 pb-4">
-                <p className="text-xs text-slate-400 dark:text-slate-500 mb-2">Suggestions :</p>
-                <div className="flex gap-2 flex-wrap">
-                  {suggestions.map((s, i) => (
-                    <Badge
-                      key={i}
-                      variant="secondary"
-                      className="cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-600 py-2 px-3 dark:bg-slate-700 dark:text-slate-200"
-                      onClick={() => handleSuggestion(s.text)}
-                    >
-                      <s.icon className="w-3 h-3 mr-1" />
-                      {s.text}
-                    </Badge>
-                  ))}
+              <div
+                className={`max-w-[70%] rounded-2xl px-4 py-3 ${
+                  msg.role === "user"
+                    ? "bg-gradient-to-r from-[#0ABAB5] to-blue-600 text-white"
+                    : "bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-white"
+                }`}
+              >
+                <p className="text-sm whitespace-pre-wrap">
+                  {msg.content}
+                </p>
+
+                <p
+                  className={`text-xs mt-1 ${
+                    msg.role === "user"
+                      ? "text-white/70"
+                      : "text-slate-400"
+                  }`}
+                >
+                  {msg.timestamp.toLocaleTimeString("fr-FR", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </p>
+              </div>
+
+              {msg.role === "user" && (
+                <div className="w-8 h-8 shrink-0 bg-slate-300 dark:bg-slate-600 rounded-full flex items-center justify-center">
+                  <User className="w-4 h-4 text-slate-600 dark:text-slate-200" />
+                </div>
+              )}
+            </div>
+          ))}
+
+          {loading && (
+            <div className="flex gap-3">
+              <div className="w-8 h-8 shrink-0 bg-gradient-to-br from-[#0ABAB5] to-blue-600 rounded-full flex items-center justify-center">
+                <Bot className="w-4 h-4 text-white" />
+              </div>
+
+              <div className="bg-slate-100 dark:bg-slate-700 rounded-2xl px-4 py-3">
+                <div className="flex gap-1">
+                  <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" />
+                  <div
+                    className="w-2 h-2 bg-slate-400 rounded-full animate-bounce"
+                    style={{ animationDelay: "0.1s" }}
+                  />
+                  <div
+                    className="w-2 h-2 bg-slate-400 rounded-full animate-bounce"
+                    style={{ animationDelay: "0.2s" }}
+                  />
                 </div>
               </div>
-            )}
-
-            <div className="p-4 border-t border-slate-200 dark:border-slate-700">
-              <div className="flex gap-3">
-                <Input
-                  value={input}
-                  onChange={e => setInput(e.target.value)}
-                  placeholder="Posez votre question..."
-                  onKeyDown={e => e.key === 'Enter' && handleSend()}
-                  className="h-12 dark:bg-slate-700 dark:text-white dark:border-slate-600"
-                />
-                <Button
-                  onClick={handleSend}
-                  disabled={loading || !input.trim()}
-                  className="h-12 px-6 bg-gradient-to-r from-[#0ABAB5] to-blue-600 text-white"
-                >
-                  <Send className="w-4 h-4" />
-                </Button>
-              </div>
             </div>
-          </Card>
+          )}
+
+          <div ref={messagesEndRef} />
+        </CardContent>
+
+        {/* Suggestions */}
+        {messages.length <= 1 && (
+          <div className="px-6 pb-4 shrink-0">
+            <p className="text-xs text-slate-400 dark:text-slate-500 mb-2">
+              Suggestions :
+            </p>
+
+            <div className="flex gap-2 flex-wrap">
+              {suggestions.map((s, i) => (
+                <Badge
+                  key={i}
+                  variant="secondary"
+                  className="cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-600 py-2 px-3 dark:bg-slate-700 dark:text-slate-200"
+                  onClick={() => handleSuggestion(s.text)}
+                >
+                  <s.icon className="w-3 h-3 mr-1" />
+                  {s.text}
+                </Badge>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Input */}
+        <div className="p-4 shrink-0 border-t border-slate-200 dark:border-slate-700">
+          <div className="flex gap-3">
+            <Input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Posez votre question..."
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleSend();
+              }}
+              className="h-12 dark:bg-slate-700 dark:text-white dark:border-slate-600"
+            />
+
+            <Button
+              onClick={handleSend}
+              disabled={loading || !input.trim()}
+              className="h-12 px-6 bg-gradient-to-r from-[#0ABAB5] to-blue-600 text-white"
+            >
+              <Send className="w-4 h-4" />
+            </Button>
+          </div>
         </div>
-      </main>
+
+      </Card>
+    </div>
+  </div>
+</main>
+
     </div>
   );
 }

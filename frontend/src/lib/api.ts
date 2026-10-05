@@ -10,11 +10,17 @@ class ApiClient {
     if (typeof window !== 'undefined') localStorage.setItem('auth_token', token);
   }
 
-  getToken(): string | null {
-    if (this.token) return this.token;
-    if (typeof window !== 'undefined') return localStorage.getItem('auth_token');
-    return null;
+getToken(): string | null {
+  // ✅ Toujours lire depuis localStorage en priorité (persiste aux navigations)
+  if (typeof window !== 'undefined') {
+    const stored = localStorage.getItem('auth_token');
+    if (stored) {
+      this.token = stored;
+      return stored;
+    }
   }
+  return this.token;
+}
 
   // ✅ CORRECTION : Gérer le FormData correctement
   private async request(endpoint: string, options: RequestInit = {}) {
@@ -251,12 +257,15 @@ class ApiClient {
     return this.request('/ai/seasonal/');
   }
 
-  async chatWithAI(message: string) {
-    return this.request('/ai/chat/', {
-      method: 'POST',
-      body: JSON.stringify({ message }),
-    });
-  }
+  async chatWithAI(message: string, sessionId?: string) {
+  return this.request('/ai/chat/', {
+    method: 'POST',
+    body: JSON.stringify({ 
+      message,
+      session_id: sessionId,   // ← AJOUT
+    }),
+  });
+}
 
   async recommendStock(medicineId: string) {
     return this.request('/ai/recommend-stock/', {

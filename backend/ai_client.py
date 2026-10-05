@@ -13,13 +13,16 @@ logger = logging.getLogger(__name__)
 
 class DengPharmaAIClient:
     """
-    Client pour interagir avec le service IA de DENG PHARMA
+    Client p    our interagir avec le service IA de DENG PHARMA
     """
     
     def __init__(self, base_url: str = None):
         # Utiliser la variable d'environnement ou la valeur par défaut
-        self.base_url = base_url or os.getenv('AI_SERVICE_URL', 'http://127.0.0.1:8001')
-        self.timeout = 10  # secondes
+        self.base_url = base_url or os.getenv('AI_SERVICE_URL', 'http://127.0.0.1:8002')
+        # Timeout différencié : court pour GET, long pour chat/predict
+        self.timeout_short = 10    # health, criticality, saisonnier
+        self.timeout_long = 45     # chat (LLM), predict
+        self.timeout = self.timeout_long  # par défaut
         logger.info(f"🤖 Service IA configuré à : {self.base_url}")
         
     def health_check(self) -> Dict:
@@ -179,19 +182,30 @@ class DengPharmaAIClient:
 
 
 
+    def chat(self, message: str, session_id: Optional[str] = None) -> Dict:
+        """
+        Envoie un message au chatbot IA.
+        Timeout long car le LLM peut mettre 10-30s à répondre.
+        """
+        payload = {"message": message}
+        if session_id:
+            payload["session_id"] = session_id
 
-    def chat(self, message: str) -> Dict:
-        """Envoie un message au chatbot IA"""
         try:
             response = requests.post(
                 f"{self.base_url}/chat",
-                json={"message": message},
-                timeout=self.timeout
+                json=payload,
+                timeout=self.timeout_long,   # ← 45s
             )
+            response.raise_for_status()
             return response.json()
+        except requests.Timeout:
+            logger.error(f"⏱️ Timeout chat après {self.timeout_long}s")
+            return {"reply": "Le service IA met trop de temps à répondre. Réessayez.", "error": "timeout"}
         except requests.RequestException as e:
-            logger.error(f"Erreur chat : {e}")
-            return {"reply": "Désolé, le service IA est momentanément indisponible."}
+            logger.error(f"❌ Erreur chat : {e}", exc_info=True)
+            return {"reply": "Désolé, le service IA est momentanément indisponible.", "error": str(e)}
+
 
 
 # Instance unique du client (pattern Singleton)

@@ -130,14 +130,19 @@ class AIChatView(APIView):
     
     def post(self, request):
         message = request.data.get('message', '')
-        
+        session_id = request.data.get('session_id', None)
+
         if not message:
             return Response(
                 {"reply": "Veuillez poser une question."},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
-        result = ai_client.chat(message)
+
+        # Utiliser l'ID utilisateur comme session par défaut
+        if not session_id:
+            session_id = f"user-{request.user.id}"
+
+        result = ai_client.chat(message, session_id=session_id)
         return Response(result)
 
 class AIHealthView(APIView):

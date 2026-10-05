@@ -102,18 +102,29 @@ export default function SettingsPage() {
   });
 
   // Récupérer les prédictions quand un médicament est sélectionné
-  const { data: predictionData, isLoading: predLoading } = useQuery({
-    queryKey: ["prediction", selectedMedicine],
-    queryFn: () => api.getIAPredict(selectedMedicine, 7),
-    enabled: !!selectedMedicine,
-  });
+const { data: predictionData, isLoading: predLoading } = useQuery({
+  queryKey: ["prediction", selectedMedicine],
+  queryFn: () => {
+    // ✅ Normaliser l'ID (supprimer les tirets pour SQLite)
+    const cleanId = selectedMedicine.replace(/-/g, '');
+    console.log("🔑 ID original:", selectedMedicine);
+    console.log("🧹 ID normalisé:", cleanId);
+    return api.getIAPredict(cleanId, 7);
+  },
+  enabled: !!selectedMedicine,
+});
 
   // Charger SHAP avec useQuery
-  const { data: shapData, isLoading: shapLoading } = useQuery({
-    queryKey: ["shap", selectedMedicine],
-    queryFn: () => api.getIAShap(selectedMedicine),
-    enabled: !!selectedMedicine,
-  });
+const { data: shapData, isLoading: shapLoading } = useQuery({
+  queryKey: ["shap", selectedMedicine],
+  queryFn: () => {
+    // ✅ Normaliser l'ID
+    const cleanId = selectedMedicine.replace(/-/g, '');
+    return api.getIAShap(cleanId);
+  },
+  enabled: !!selectedMedicine,
+});
+  
 
   const profileForm = useForm<ProfileFormValues>({
     resolver: zodResolver(profileSchema),
@@ -613,45 +624,157 @@ const handleLogoUpload = async () => {
                 </CardHeader>
                 <CardContent className="p-6 space-y-8">
                   {/* Indice de confiance */}
-                  <div>
-                    <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
-                      <Target className="w-5 h-5 text-[#0ABAB5]" /> Indice de confiance
-                    </h3>
-                    {perfLoading ? (
-                      <p className="text-slate-500 dark:text-slate-400">Chargement des métriques...</p>
-                    ) : modelPerf ? (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div className="bg-gradient-to-br from-blue-50 to-cyan-50 dark:from-slate-700 dark:to-slate-700 p-6 rounded-2xl shadow-sm border border-blue-100 dark:border-slate-600">
-                          <div className="flex items-center justify-between mb-4">
-                            <h4 className="text-sm font-bold text-blue-600 dark:text-blue-300 uppercase tracking-wider">Test</h4>
-                            <Activity className="w-5 h-5 text-blue-400" />
-                          </div>
-                          <MetricRow label="MAE" value={modelPerf.test?.mae?.toFixed(2)} />
-                          <MetricRow label="RMSE" value={modelPerf.test?.rmse?.toFixed(2)} />
-                          <MetricRow label="MAPE" value={modelPerf.test?.mape?.toFixed(1)} unit="%" />
-                          <MetricRow label="R²" value={modelPerf.test?.r2?.toFixed(3)} />
-                        </div>
-                        <div className="bg-gradient-to-br from-purple-50 to-pink-50 dark:from-slate-700 dark:to-slate-700 p-6 rounded-2xl shadow-sm border border-purple-100 dark:border-slate-600">
-                          <div className="flex items-center justify-between mb-4">
-                            <h4 className="text-sm font-bold text-purple-600 dark:text-purple-300 uppercase tracking-wider">Validation</h4>
-                            <TrendingUp className="w-5 h-5 text-purple-400" />
-                          </div>
-                          <MetricRow label="MAE" value={modelPerf.validation?.mae?.toFixed(2)} />
-                          <MetricRow label="RMSE" value={modelPerf.validation?.rmse?.toFixed(2)} />
-                          <MetricRow label="MAPE" value={modelPerf.validation?.mape?.toFixed(1)} unit="%" />
-                          <MetricRow label="R²" value={modelPerf.validation?.r2?.toFixed(3)} />
-                        </div>
-                      </div>
-                    ) : (
-                      <p className="text-slate-500 dark:text-slate-400">Métriques non disponibles.</p>
-                    )}
-                    {modelPerf && (
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-4">
-                        Version <span className="font-semibold">{modelPerf.model_version}</span> | Entraîné le {modelPerf.trained_at}
-                      </p>
-                    )}
-                  </div>
+<div>
+  <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-2 flex items-center gap-2">
+    <Target className="w-5 h-5 text-[#0ABAB5]" /> Indice de confiance
+  </h3>
+  <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
+    Le dataset a été divisé en 3 parties : <strong>Train (70%)</strong>, 
+    <strong>Validation (15%)</strong> et <strong>Test (15%)</strong>. 
+    Les métriques ci-dessous montrent les performances sur les jeux de test et validation.
+  </p>
+  
+  {perfLoading ? (
+    <p className="text-slate-500 dark:text-slate-400">Chargement des métriques...</p>
+  ) : modelPerf && (modelPerf.test || modelPerf.validation) ? (
+    <>
+      {/* Tableau unifié Test + Validation */}
+      <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-gradient-to-r from-slate-50 to-slate-100 dark:from-slate-700 dark:to-slate-700">
+              <th className="text-left py-3 px-4 font-semibold text-slate-700 dark:text-slate-200">
+                Métrique
+              </th>
+              <th className="text-center py-3 px-4 font-semibold text-blue-600 dark:text-blue-300">
+                <div className="flex items-center justify-center gap-2">
+                  <Activity className="w-4 h-4" />
+                  Test
+                </div>
+              </th>
+              <th className="text-center py-3 px-4 font-semibold text-purple-600 dark:text-purple-300">
+                <div className="flex items-center justify-center gap-2">
+                  <TrendingUp className="w-4 h-4" />
+                  Validation
+                </div>
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+            {/* MAE */}
+            <tr className="bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
+              <td className="py-3 px-4 text-slate-700 dark:text-slate-300 font-medium">
+                MAE
+                <span className="block text-xs text-slate-400 dark:text-slate-500 font-normal">
+                  Erreur absolue moyenne
+                </span>
+              </td>
+              <td className="py-3 px-4 text-center font-bold text-slate-900 dark:text-white">
+                {modelPerf.test?.mae?.toFixed(2) ?? "N/A"}
+              </td>
+              <td className="py-3 px-4 text-center font-bold text-slate-900 dark:text-white">
+                {modelPerf.validation?.mae?.toFixed(2) ?? "N/A"}
+              </td>
+            </tr>
 
+            {/* RMSE */}
+            <tr className="bg-slate-50/50 dark:bg-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
+              <td className="py-3 px-4 text-slate-700 dark:text-slate-300 font-medium">
+                RMSE
+                <span className="block text-xs text-slate-400 dark:text-slate-500 font-normal">
+                  Erreur quadratique moyenne
+                </span>
+              </td>
+              <td className="py-3 px-4 text-center font-bold text-slate-900 dark:text-white">
+                {modelPerf.test?.rmse?.toFixed(2) ?? "N/A"}
+              </td>
+              <td className="py-3 px-4 text-center font-bold text-slate-900 dark:text-white">
+                {modelPerf.validation?.rmse?.toFixed(2) ?? "N/A"}
+              </td>
+            </tr>
+
+            {/* MAPE */}
+            <tr className="bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
+              <td className="py-3 px-4 text-slate-700 dark:text-slate-300 font-medium">
+                MAPE
+                <span className="block text-xs text-slate-400 dark:text-slate-500 font-normal">
+                  Erreur en pourcentage
+                </span>
+              </td>
+              <td className="py-3 px-4 text-center font-bold text-slate-900 dark:text-white">
+                {modelPerf.test?.mape?.toFixed(1) ?? "N/A"}
+                {modelPerf.test?.mape && <span className="text-sm ml-0.5">%</span>}
+              </td>
+              <td className="py-3 px-4 text-center font-bold text-slate-900 dark:text-white">
+                {modelPerf.validation?.mape?.toFixed(1) ?? "N/A"}
+                {modelPerf.validation?.mape && <span className="text-sm ml-0.5">%</span>}
+              </td>
+            </tr>
+
+            {/* R² */}
+            <tr className="bg-slate-50/50 dark:bg-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
+              <td className="py-3 px-4 text-slate-700 dark:text-slate-300 font-medium">
+                R²
+                <span className="block text-xs text-slate-400 dark:text-slate-500 font-normal">
+                  Coefficient de détermination
+                </span>
+              </td>
+              <td className="py-3 px-4 text-center font-bold text-slate-900 dark:text-white">
+                {modelPerf.test?.r2?.toFixed(3) ?? "N/A"}
+              </td>
+              <td className="py-3 px-4 text-center font-bold text-slate-900 dark:text-white">
+                {modelPerf.validation?.r2?.toFixed(3) ?? "N/A"}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      {/* Indicateur de stabilité (overfitting) */}
+      <div className="mt-4 flex items-start gap-3 p-3 rounded-lg bg-slate-50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600">
+        {Math.abs((modelPerf.test?.r2 || 0) - (modelPerf.validation?.r2 || 0)) < 0.05 ? (
+          <>
+            <div className="w-6 h-6 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center flex-shrink-0 mt-0.5">
+              <span className="text-green-600 dark:text-green-400 text-xs">✓</span>
+            </div>
+            <div>
+              <p className="text-sm font-medium text-green-700 dark:text-green-400">
+                Modèle stable
+              </p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Les performances Test et Validation sont proches → pas d'overfitting détecté.
+              </p>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="w-6 h-6 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center flex-shrink-0 mt-0.5">
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-amber-700 dark:text-amber-400">
+                Écart Test/Validation détecté
+              </p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                L'écart entre les performances peut indiquer un overfitting. Vérifiez l'entraînement.
+              </p>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Version et date */}
+      <p className="text-xs text-slate-500 dark:text-slate-400 mt-4">
+        Version <span className="font-semibold">{modelPerf.model_version || "N/A"}</span>
+        {modelPerf.trained_at && (
+          <> · Entraîné le <span className="font-semibold">{modelPerf.trained_at}</span></>
+        )}
+      </p>
+    </>
+  ) : (
+    <p className="text-slate-500 dark:text-slate-400">Métriques non disponibles.</p>
+  )}
+</div>
                   {/* Prédictions */}
                   <div>
                     <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
@@ -674,55 +797,110 @@ const handleLogoUpload = async () => {
                     </select>
 
                     <div className="mt-6 bg-slate-50 dark:bg-slate-700/50 p-4 rounded-2xl">
-                      {predLoading ? (
-                        <p className="text-slate-500 dark:text-slate-400 text-center py-8">Chargement des prédictions...</p>
-                      ) : predictionData && predictionData.predictions ? (
-                        <ResponsiveContainer width="100%" height={300}>
-                          <AreaChart data={predictionData.predictions} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-                            <defs>
-                              <linearGradient id="colorPred" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="5%" stopColor="#0ABAB5" stopOpacity={0.8} />
-                                <stop offset="95%" stopColor="#0ABAB5" stopOpacity={0} />
-                              </linearGradient>
-                            </defs>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                            <XAxis dataKey="date" tick={{ fill: '#64748b', fontSize: 12 }} />
-                            <YAxis tick={{ fill: '#64748b', fontSize: 12 }} />
-                            <RechartsTooltip
-                              contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
-                              labelStyle={{ fontWeight: 'bold', color: '#0F1A2C' }}
-                            />
-                            <Legend verticalAlign="top" height={36} />
-                            <Area
-                              type="monotone"
-                              dataKey="predicted_sales"
-                              stroke="#0ABAB5"
-                              strokeWidth={3}
-                              fillOpacity={1}
-                              fill="url(#colorPred)"
-                              name="Ventes prévues"
-                            />
-                          </AreaChart>
-                        </ResponsiveContainer>
-                      ) : (
-                        <p className="text-slate-500 dark:text-slate-400 text-center py-8">
-                          Sélectionnez un médicament pour voir les prédictions.
-                        </p>
-                      )}
-                    </div>
+  {predLoading ? (
+    <p className="text-slate-500 dark:text-slate-400 text-center py-8">Chargement des prédictions...</p>
+  ) : predictionData?.detail ? (
+    /* ⚠️ Message d'erreur (données insuffisantes) */
+    <div className="flex flex-col items-center justify-center py-12 text-center">
+      <div className="w-16 h-16 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center mb-4">
+        <AlertTriangle className="w-8 h-8 text-amber-500" />
+      </div>
+      <h3 className="text-lg font-semibold text-slate-800 dark:text-white mb-2">
+        Données insuffisantes
+      </h3>
+      <p className="text-slate-500 dark:text-slate-400 max-w-md text-sm">
+        {predictionData.detail.includes("historique")
+          ? "Ce médicament n'a pas encore assez d'historique de ventes pour générer des prédictions fiables."
+          : predictionData.detail}
+      </p>
+      <p className="text-xs text-slate-400 dark:text-slate-500 mt-2">
+        Minimum requis : 7 jours de ventes
+      </p>
+    </div>
+  ) : predictionData && predictionData.predictions ? (
+    <ResponsiveContainer width="100%" height={300}>
+      <AreaChart data={predictionData.predictions} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+        <defs>
+          <linearGradient id="colorPred" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor="#0ABAB5" stopOpacity={0.8} />
+            <stop offset="95%" stopColor="#0ABAB5" stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+        <XAxis dataKey="date" tick={{ fill: '#64748b', fontSize: 12 }} />
+        <YAxis tick={{ fill: '#64748b', fontSize: 12 }} />
+        <RechartsTooltip
+          contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+          labelStyle={{ fontWeight: 'bold', color: '#0F1A2C' }}
+        />
+        <Legend verticalAlign="top" height={36} />
+        <Area
+          type="monotone"
+          dataKey="predicted_sales"
+          stroke="#0ABAB5"
+          strokeWidth={3}
+          fillOpacity={1}
+          fill="url(#colorPred)"
+          name="Ventes prévues"
+        />
+      </AreaChart>
+    </ResponsiveContainer>
+  ) : selectedMedicine ? (
+    /* ⚠️ Erreur générique */
+    <div className="flex flex-col items-center justify-center py-12 text-center">
+      <AlertTriangle className="w-8 h-8 text-amber-500 mb-3" />
+      <p className="text-slate-500 dark:text-slate-400">
+        Impossible de charger les prédictions pour ce médicament.
+      </p>
+    </div>
+  ) : (
+    <p className="text-slate-500 dark:text-slate-400 text-center py-8">
+      Sélectionnez un médicament pour voir les prédictions.
+    </p>
+  )}
+</div>
                   </div>
 
                   {/* SHAP */}
-                  <div className="mt-6">
-                    <h3 className="text-lg font-semibold mb-2">Explicabilité (SHAP)</h3>
-                    {shapLoading ? (
-                      <p className="text-muted-foreground">Chargement SHAP...</p>
-                    ) : shapData ? (
-                      <ShapChart data={shapData} />
-                    ) : (
-                      <p className="text-muted-foreground">Sélectionnez un médicament pour voir l'importance des variables.</p>
-                    )}
-                  </div>
+<div className="mt-6">
+  <h3 className="text-lg font-semibold mb-2 text-slate-900 dark:text-white">
+    Explicabilité (SHAP)
+  </h3>
+  {shapLoading ? (
+    <p className="text-slate-500 dark:text-slate-400">Chargement SHAP...</p>
+  ) : shapData?.error ? (
+    /* ⚠️ Message d'erreur SHAP (données insuffisantes) */
+    <div className="flex flex-col items-center justify-center py-12 text-center bg-slate-50 dark:bg-slate-700/50 rounded-2xl">
+      <div className="w-16 h-16 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center mb-4">
+        <AlertTriangle className="w-8 h-8 text-amber-500" />
+      </div>
+      <h4 className="text-base font-semibold text-slate-800 dark:text-white mb-2">
+        Données insuffisantes pour SHAP
+      </h4>
+      <p className="text-slate-500 dark:text-slate-400 max-w-md text-sm">
+        {shapData.error.includes("historique")
+          ? "Ce médicament n'a pas assez d'historique de ventes pour calculer l'explicabilité du modèle."
+          : shapData.error}
+      </p>
+      <p className="text-xs text-slate-400 dark:text-slate-500 mt-2">
+        Minimum requis : 7 jours de ventes
+      </p>
+    </div>
+  ) : shapData && shapData.features && shapData.features.length > 0 ? (
+    <ShapChart data={shapData} />
+  ) : selectedMedicine ? (
+    <div className="flex flex-col items-center justify-center py-12 text-center">
+      <AlertTriangle className="w-8 h-8 text-amber-500 mb-3" />
+      <p className="text-slate-500 dark:text-slate-400">
+        Impossible de charger l'explicabilité SHAP pour ce médicament.
+      </p>
+    </div>
+  ) : (
+    <p className="text-slate-500 dark:text-slate-400">
+      Sélectionnez un médicament pour voir l'importance des variables.
+    </p>
+  )}
+</div>
 
                   {/* Bouton entraînement */}
                   <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">

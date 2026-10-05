@@ -1,6 +1,5 @@
-const CACHE_NAME = "deng-pharma-v1";
-const urlsToCache = [
-  "/",
+const CACHE_NAME = "deng-pharma-v2";
+const STATIC_ASSETS = [
   "/manifest.json",
   "/icons/icon-192x192.png",
   "/icons/icon-512x512.png"
@@ -9,8 +8,16 @@ const urlsToCache = [
 // Installation
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(urlsToCache))
+    caches.open(CACHE_NAME).then((cache) => {
+      // addAll échoue si UN SEUL fichier est introuvable → on ajoute individuellement
+      return Promise.all(
+        STATIC_ASSETS.map((url) =>
+          cache.add(url).catch((err) => console.warn(`⚠️ Cache skip: ${url}`, err))
+        )
+      );
+    })
   );
+  self.skipWaiting();
 });
 
 // Activation
@@ -24,27 +31,63 @@ self.addEventListener("activate", (event) => {
       )
     )
   );
+  self.clients.claim();
 });
 
-// 🔥 Fetch : ignorer les requêtes API et les images externes
+// 🔥 Fetch : STRATÉGIE "network-first" pour éviter les blocages
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
 
-  // Ignorer les requêtes API (backend)
+  // ✅ 1. IGNORER complètement les chunks Next.js (Turbopack, dev et prod)
+  if (url.pathname.startsWith("/_next/")) {
+    return;  // Laisser le navigateur gérer normalement
+  }
+
+  // ✅ 2. IGNORER les requêtes API
   if (url.pathname.startsWith("/api/")) {
-    event.respondWith(fetch(event.request));
     return;
   }
 
-  // Ignorer les images externes (Cloudinary, etc.)
-  if (url.hostname.includes("cloudinary") || url.hostname.includes("imgur")) {
-    event.respondWith(fetch(event.request));
+  // ✅ 3. IGNORER les websockets et HMR (Hot Module Replacement)
+  if (url.protocol === "ws:" || url.protocol === "wss:") {
     return;
   }
 
-  // Pour les autres ressources, servir du cache ou du réseau
+  // ✅ 4. IGNORER les images externes
+  if (
+    url.hostname.includes("cloudinary") ||
+    url.hostname.includes("imgur") ||
+    url.hostname !== self.location.hostname
+  ) {
+    return;
+  }
+
+  // ✅ 5. IGNORER les requêtes non-GET (POST, PUT, DELETE...)
+  if (event.request.method !== "GET") {
+    return;
+  }
+
+  // ✅ 6. Pour les autres ressources : network-first avec fallback cache
   event.respondWith(
-    caches.match(event.request).then((response) => response || fetch(event.request))
+    fetch(event.request)
+      .then((response) => {
+        // Mettre en cache uniquement les réponses valides
+        if (response && response.status === 200 && response.type === "basic") {
+          const responseClone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, responseClone).catch(() => {});
+          });
+        }
+        return response;
+      })
+      .catch(() => {
+        // Fallback : chercher dans le cache
+        return caches.match(event.request).then((cached) => {
+          if (cached) return cached;
+          // Dernier recours : réponse vide plutôt que rejet
+          return new Response("", { status: 503, statusText: "Offline" });
+        });
+      })
   );
 });
 
@@ -52,7 +95,7 @@ self.addEventListener("fetch", (event) => {
 self.addEventListener("push", (event) => {
   const data = event.data ? event.data.json() : {};
   const options = {
-    body: data.body,
+    body: data.body || "Nouvelle notification",
     icon: "/icons/icon-192x192.png",
     badge: "/icons/icon-192x192.png",
   };

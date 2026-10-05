@@ -1,0 +1,98 @@
+# ai_service/training/plot_radar_colored.py
+import matplotlib.pyplot as plt
+import numpy as np
+
+params = {
+    'n_estimators':      669,
+    'max_depth':         12,
+    'learning_rate':     0.0228,
+    'subsample':         0.617,
+    'colsample_bytree':  0.676,
+    'min_child_weight':  4,
+    'gamma':             0.762,
+    'reg_alpha':         0.646,
+    'reg_lambda':        0.140,
+}
+
+ranges = {
+    'n_estimators':      (200, 1000),
+    'max_depth':         (4, 12),
+    'learning_rate':     (0.01, 0.2),
+    'subsample':         (0.6, 1.0),
+    'colsample_bytree':  (0.6, 1.0),
+    'min_child_weight':  (1, 10),
+    'gamma':             (0, 1),
+    'reg_alpha':         (0, 1),
+    'reg_lambda':        (0, 1),
+}
+
+# Catégories de couleur
+categories = {
+    'structure':  ['n_estimators', 'max_depth'],
+    'sampling':   ['subsample', 'colsample_bytree'],
+    'régularisation': ['gamma', 'reg_alpha', 'reg_lambda'],
+    'apprentissage': ['learning_rate', 'min_child_weight'],
+}
+cat_colors = {
+    'structure':     '#e74c3c',
+    'sampling':      '#f39c12',
+    'régularisation': '#27ae60',
+    'apprentissage': '#3498db',
+}
+
+labels = list(params.keys())
+values_norm = [(params[n] - ranges[n][0]) / (ranges[n][1] - ranges[n][0])
+               for n in labels]
+values_norm += values_norm[:1]
+angles = np.linspace(0, 2 * np.pi, len(labels), endpoint=False).tolist()
+angles += angles[:1]
+
+fig, ax = plt.subplots(figsize=(10, 10), subplot_kw=dict(polar=True))
+ax.set_theta_offset(np.pi / 2)
+ax.set_theta_direction(-1)
+
+# Polygone global (gris clair)
+ax.plot(angles, values_norm, '-', linewidth=1.5, color='#94a3b8', alpha=0.5)
+ax.fill(angles, values_norm, alpha=0.10, color='#94a3b8')
+
+# Points colorés par catégorie
+for i, name in enumerate(labels):
+    for cat, names in categories.items():
+        if name in names:
+            color = cat_colors[cat]
+            break
+    ax.scatter(angles[i], values_norm[i], s=200, color=color,
+               edgecolor='white', linewidth=2, zorder=5,
+               label=cat if cat not in [l.get_text() for l in ax.get_legend().get_texts()] if ax.get_legend() else True else False)
+
+# Labels
+labels_with_values = []
+for name in labels:
+    raw = params[name]
+    txt = f"{name}\n({raw:.3f})" if isinstance(raw, float) and raw < 1 else f"{name}\n({raw})"
+    labels_with_values.append(txt)
+
+ax.set_xticks(angles[:-1])
+ax.set_xticklabels(labels_with_values, fontsize=11, fontweight='bold')
+ax.set_ylim(0, 1)
+ax.set_yticks([0.2, 0.4, 0.6, 0.8, 1.0])
+ax.set_yticklabels(['20%', '40%', '60%', '80%', '100%'], fontsize=9, color='#64748b')
+ax.grid(color='#cbd5e1', linestyle='--', linewidth=0.8, alpha=0.7)
+
+# Légende
+from matplotlib.lines import Line2D
+legend_elements = [
+    Line2D([0], [0], marker='o', color='w', markerfacecolor=cat_colors[c],
+           markersize=12, label=c.capitalize())
+    for c in categories
+]
+ax.legend(handles=legend_elements, loc='upper right',
+          bbox_to_anchor=(1.25, 1.1), fontsize=10, frameon=True)
+
+plt.title('Hyperparamètres XGBoost par catégorie\n(Optuna — 30 trials)',
+          fontsize=14, fontweight='bold', pad=30)
+plt.tight_layout()
+plt.savefig('hyperparams_radar_colored.png', dpi=300, bbox_inches='tight',
+            facecolor='white')
+plt.show()
+print("✅ hyperparams_radar_colored.png généré")

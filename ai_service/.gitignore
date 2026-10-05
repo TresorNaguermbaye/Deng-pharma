@@ -1,0 +1,18 @@
+# Environnement
+.env
+*.env
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Modèles volumineux (décommenter si tu ne veux pas les versionner)
+# models/*.pkl
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

@@ -5,7 +5,8 @@ import { AuthProvider } from "@/lib/auth";
 import Providers from "./providers";
 import PWAProvider from "@/components/PWAProvider";
 import GlobalSearch from "@/components/GlobalSearch";
-import { Toaster } from "sonner";   // <-- ajout import
+import FloatingChatWrapper from "@/components/FloatingChatWrapper";
+import { Toaster } from "sonner";
 import "./globals.css";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
@@ -15,7 +16,6 @@ export const metadata: Metadata = {
   title: "DENG PHARMA - Gestion Pharmaceutique",
   description: "Plateforme SaaS intelligente de gestion pharmaceutique avec IA",
   manifest: "/manifest.json",
-  themeColor: "#0F1A2C",
   icons: {
     icon: [
       { url: "/icons/icon-192x192.png", sizes: "192x192", type: "image/png" },
@@ -42,11 +42,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="antialiased bg-slate-50 dark:bg-slate-900 min-h-screen">
         <Providers>
           <AuthProvider>
-            <PWAProvider>
+            <PWAProvider> 
               <ThemeProvider>
                 {children}
                 <GlobalSearch />
-                <Toaster richColors />   {/* <-- ajout du Toaster */}
+                <FloatingChatWrapper />
+                <Toaster richColors />
               </ThemeProvider>
             </PWAProvider>
           </AuthProvider>

@@ -1,0 +1,129 @@
+.
+├── ai_service
+│   ├── api
+│   │   └── main.py
+│   ├── data
+│   │   └── synthetic_sales.csv
+│   ├── docker
+│   ├── Dockerfile
+│   ├── models
+│   │   ├── features.pkl
+│   │   ├── metrics.json
+│   │   └── xgboost_tchad.pkl
+│   ├── monitoring
+│   ├── prediction
+│   ├── preprocessing
+│   ├── requirements.txt
+│   ├── src
+│   │   └── components
+│   └── training
+│       ├── generate_synthetic_data.py
+│       ├── tchad_pharma_sales.csv
+│       └── train_model.py
+├── apps
+│   └── orders
+│       ├── templates
+│       └── views.py
+├── arborescence.txt
+├── backend
+│   ├── add_sales.py
+│   ├── ai_client.py
+│   ├── apps
+│   │   ├── accounts
+│   │   ├── ai_integration
+│   │   ├── ai_training
+│   │   ├── analytics
+│   │   ├── audit
+│   │   ├── inventory
+│   │   ├── medicines
+│   │   ├── notifications
+│   │   ├── orders
+│   │   ├── reporting
+│   │   ├── sales
+│   │   └── settings
+│   ├── bon_commande_1.pdf
+│   ├── celerybeat-schedule
+│   ├── config
+│   │   ├── asgi.py
+│   │   ├── celery.py
+│   │   ├── __init__.py
+│   │   ├── settings.py
+│   │   ├── urls.py
+│   │   └── wsgi.py
+│   ├── create_sales_data.py
+│   ├── data_dump_final_clean.json
+│   ├── data_dump_final.json
+│   ├── data_dump.json
+│   ├── db.sqlite3
+│   ├── Dockerfile
+│   ├── entrypoint.sh
+│   ├── export_clean.py
+│   ├── force_cloudinary_upload.py
+│   ├── frontend
+│   │   ├── package.json
+│   │   ├── package-lock.json
+│   │   └── src
+│   ├── generate_sales.py
+│   ├── import_sales.py
+│   ├── load_data.py
+│   ├── manage.py
+│   ├── media
+│   │   ├── logos
+│   │   └── profile_photos
+│   ├── populate_medicines_prod.py
+│   ├── rapport.pdf
+│   ├── rapport_pdf_view.py
+│   ├── rapport_ventes.pdf
+│   ├── render-build.sh
+│   ├── requirements.txt
+│   ├── static
+│   ├── tasks
+│   ├── templates
+│   │   ├── reports
+│   │   └── sales
+│   ├── test.pdf
+│   ├── upload_logo_to_cloudinary.py
+│   └── vapid_private.pem
+├── database
+├── docker
+│   └── nginx
+├── docker-compose.yml
+├── documentation
+├── frontend
+│   ├── AGENTS.md
+│   ├── CLAUDE.md
+│   ├── components.json
+│   ├── Dockerfile
+│   ├── eslint.config.mjs
+│   ├── next.config.ts
+│   ├── next-env.d.ts
+│   ├── package.json
+│   ├── package-lock.json
+│   ├── postcss.config.mjs
+│   ├── public
+│   │   ├── file.svg
+│   │   ├── globe.svg
+│   │   ├── icons
+│   │   ├── manifest.json
+│   │   ├── next.svg
+│   │   ├── screenshots
+│   │   ├── sw.js
+│   │   ├── vercel.svg
+│   │   └── window.svg
+│   ├── README.md
+│   ├── src
+│   │   ├── 0
+│   │   ├── app
+│   │   ├── components
+│   │   ├── context
+│   │   ├── hooks
+│   │   ├── lib
+│   │   ├── react
+│   │   └── types
+│   └── tsconfig.json
+├── nginx
+│   └── nginx.conf
+├── render-build.sh
+└── render.yaml
+
+56 directories, 71 files

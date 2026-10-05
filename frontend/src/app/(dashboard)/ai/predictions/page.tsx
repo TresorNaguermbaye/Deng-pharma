@@ -50,17 +50,24 @@ export default function AIPredictionsPage() {
     if (!selectedMed) return;
     setLoading(true);
     const medObj = medicines.find(m => m.id === selectedMed);
-    console.log("Medicament sélectionné:", medObj);
+    
+    // ✅ NORMALISATION : Supprimer les tirets de l'UUID (compatible SQLite)
+    const cleanId = selectedMed.replace(/-/g, '');
+    
+    console.log("📋 Medicament sélectionné:", medObj?.commercial_name);
+    console.log("🔑 ID original:", selectedMed);
+    console.log("🧹 ID normalisé:", cleanId);
+    
     try {
       const data = await api.predictSalesByName(
-        selectedMed,
+        cleanId,                          // ← ID SANS tirets ✅
         medObj?.commercial_name || "",
         7
       );
-      console.log("Réponse API:", data);
+      console.log("✅ Réponse API:", data);
       setPredictions(data.predictions || []);
     } catch (err) {
-      console.error(err);
+      console.error("❌ Erreur:", err);
     } finally {
       setLoading(false);
     }
@@ -298,13 +305,31 @@ export default function AIPredictionsPage() {
               </CardContent>
             </Card>
           </>
-        ) : (
-          <Card className="border-0 shadow-md dark:bg-slate-800 dark:border-slate-700">
-            <CardContent className="flex items-center justify-center py-16 text-slate-400 dark:text-slate-500">
-              Sélectionnez un médicament pour voir les prédictions
-            </CardContent>
-          </Card>
-        )}
+     ) : (
+  <Card className="border-0 shadow-md dark:bg-slate-800 dark:border-slate-700">
+    <CardContent className="flex flex-col items-center justify-center py-16 text-center">
+      <div className="w-16 h-16 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center mb-4">
+        <Brain className="w-8 h-8 text-amber-500" />
+      </div>
+      <h3 className="text-lg font-semibold text-slate-800 dark:text-white mb-2">
+        Données insuffisantes
+      </h3>
+      <p className="text-slate-500 dark:text-slate-400 max-w-md">
+        Ce médicament n'a pas encore assez d'historique de ventes pour générer des prédictions fiables.
+      </p>
+      <p className="text-sm text-slate-400 dark:text-slate-500 mt-2">
+        Minimum requis : 7 jours de ventes
+      </p>
+      <Button 
+        variant="outline" 
+        className="mt-4"
+        onClick={() => setSelectedMed("")}
+      >
+        Choisir un autre médicament
+      </Button>
+    </CardContent>
+  </Card>
+)}
       </main>
     </div>
   );
