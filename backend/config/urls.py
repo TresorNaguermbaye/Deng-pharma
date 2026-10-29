@@ -9,11 +9,13 @@ from apps.reporting.views import sales_report, stock_report, alert_report, user_
 
 # ========== HEALTH CHECK ==========
 def health_check(request):
-    return JsonResponse({"status": "ok", "message": "DENG PHARMA API is running"})
+    """Endpoint public pour les healthchecks (UptimeRobot, Render, etc.)"""
+    return JsonResponse({"status": "ok", "service": "DENG PHARMA Backend"})
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('api/health/', health_check, name='health-check'),  # <--- NOUVEAU
+    path('health/', health_check, name='health'),
+    # path('api/health/', health_check, name='health-check'),  # <--- NOUVEAU
     path('api/', include('apps.medicines.urls')),
     path('api/auth/', include('apps.accounts.urls')),
     path('api/inventory/', include('apps.inventory.urls')),
