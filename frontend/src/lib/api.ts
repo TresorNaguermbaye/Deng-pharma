@@ -1,7 +1,8 @@
 // frontend/lib/api.ts
 
-const DJANGO_API = process.env.NEXT_PUBLIC_API_URL || 'https://deng-pharma-backend.onrender.com/api';
+//const DJANGO_API = process.env.NEXT_PUBLIC_API_URL || 'https://deng-pharma-backend.onrender.com/api';
 
+const DJANGO_API = process.env.NEXT_PUBLIC_API_URL || 'https://deng-pharma-backend-xai2.onrender.com/api';
 class ApiClient {
   private token: string | null = null;
 
