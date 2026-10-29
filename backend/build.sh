@@ -107,4 +107,55 @@ for barcode, name, dci, cat_name, manufacturer, purchase_price, selling_price, m
 print(f'\\n🎉 Total : {Medicine.objects.count()} médicaments')
 "
 
+
+
+# 5. Création des lots de stock (inventory)
+echo "📦 Création des lots de stock..."
+python manage.py shell -c "
+from apps.inventory.models import StockLot
+from apps.medicines.models import Medicine
+from datetime import date, timedelta
+from decimal import Decimal
+
+stocks_data = {
+    'MED001': (2500, 365),
+    'MED002': (1200, 300),
+    'MED003': (800, 180),
+    'MED004': (3500, 400),
+    'MED005': (1500, 365),
+    'MED006': (900, 365),
+    'MED007': (400, 730),
+    'MED008': (150, 365),
+    'MED009': (600, 180),
+    'MED010': (2000, 400),
+    'MED011': (800, 365),
+    'MED012': (700, 365),
+    'MED013': (300, 365),
+    'MED014': (1500, 400),
+    'MED015': (400, 180),
+}
+
+for barcode, (quantity, days_to_expiry) in stocks_data.items():
+    try:
+        med = Medicine.objects.get(barcode=barcode)
+    except Medicine.DoesNotExist:
+        print(f'⚠️ Médicament introuvable : {barcode}')
+        continue
+
+    if StockLot.objects.filter(medicine=med).exists():
+        print(f'⏭️ Lot existant : {barcode}')
+        continue
+
+    StockLot.objects.create(
+        medicine=med,
+        batch_number=f'LOT-{barcode}-2026',
+        quantity=quantity,
+        expiry_date=date.today() + timedelta(days=days_to_expiry),
+        purchase_price_per_unit=med.purchase_price or Decimal('0'),
+    )
+    print(f'✅ Stock créé : {barcode} - {quantity} unités')
+
+print(f'\\n🎉 Total : {StockLot.objects.count()} lots en stock')
+"
+
 echo "🎯 === BUILD TERMINÉ ==="
