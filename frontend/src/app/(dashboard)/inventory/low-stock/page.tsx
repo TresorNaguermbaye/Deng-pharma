@@ -66,6 +66,13 @@ export default function LowStockPage() {
     }
   };
 
+  // ✅ NOUVEAU : Redirige vers /orders avec les paramètres
+  const handleOrder = (item: any) => {
+    router.push(
+      `/orders?medicine_id=${item.id}&quantity=${item.recommended_order}&name=${encodeURIComponent(item.name)}`
+    );
+  };
+
   const handleLogout = () => {
     localStorage.removeItem("auth_token");
     router.push("/login");
@@ -87,13 +94,9 @@ export default function LowStockPage() {
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900">
-      {/* Topbar */}
       <Topbar onMenuClick={() => setMobileMenuOpen(true)} />
-
-      {/* Sidebar desktop */}
       <Sidebar />
 
-      {/* Sidebar mobile */}
       {mobileMenuOpen && (
         <div className="fixed inset-0 z-50 lg:hidden">
           <div className="fixed inset-0 bg-black/50" onClick={() => setMobileMenuOpen(false)} />
@@ -128,7 +131,6 @@ export default function LowStockPage() {
         </div>
       )}
 
-      {/* Contenu principal */}
       <main className="pt-20 lg:pl-64 p-4 md:p-8 space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
@@ -220,7 +222,14 @@ export default function LowStockPage() {
                           >
                             {recommending === item.id ? "..." : "Recalculer"}
                           </Button>
-                          <Button size="sm" className="text-xs">Commander</Button>
+                          {/* ✅ NOUVEAU : onClick ajouté */}
+                          <Button 
+                            size="sm" 
+                            className="text-xs"
+                            onClick={() => handleOrder(item)}
+                          >
+                            Commander
+                          </Button>
                         </div>
                       </TableCell>
                     </TableRow>

@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -31,6 +31,17 @@ export default function OrdersPage() {
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
   const [receiving, setReceiving] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // ✅ NOUVEAU : Dialogue de création de commande
+  const searchParams = useSearchParams();
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [createForm, setCreateForm] = useState({
+    medicine_id: "",
+    medicine_name: "",
+    quantity: 0,
+  });
+  const [creating, setCreating] = useState(false);
+
   const router = useRouter();
 
   const loadOrders = async () => {
@@ -49,6 +60,43 @@ export default function OrdersPage() {
   };
 
   useEffect(() => { loadOrders(); }, []);
+
+  // ✅ NOUVEAU : Ouvre le dialogue si on arrive depuis "Stock faible"
+  useEffect(() => {
+    const medId = searchParams.get("medicine_id");
+    const qty = searchParams.get("quantity");
+    const name = searchParams.get("name");
+    if (medId && qty) {
+      setCreateForm({
+        medicine_id: medId,
+        medicine_name: name ? decodeURIComponent(name) : medId,
+        quantity: parseInt(qty, 10),
+      });
+      setCreateDialogOpen(true);
+    }
+  }, [searchParams]);
+
+  // ✅ NOUVEAU : Fonction de création
+  const handleCreateOrder = async () => {
+    if (!createForm.medicine_id || createForm.quantity <= 0) {
+      alert("Données invalides");
+      return;
+    }
+
+    setCreating(true);
+    try {
+      await api.createOrder(createForm.medicine_id, createForm.quantity, null);
+      alert(`✅ Commande créée pour ${createForm.medicine_name}`);
+      setCreateDialogOpen(false);
+      setCreateForm({ medicine_id: "", medicine_name: "", quantity: 0 });
+      loadOrders();
+      router.replace("/orders");
+    } catch (err: any) {
+      alert(`❌ Erreur : ${err.message}`);
+    } finally {
+      setCreating(false);
+    }
+  };
 
   const handleDownloadPdf = async (orderId: number | string) => {
     try {
@@ -100,7 +148,6 @@ export default function OrdersPage() {
     router.push("/login");
   };
 
-  // Navigation locale pour la sidebar mobile
   const navItems = [
     { label: "Dashboard", href: "/", icon: LayoutDashboard },
     { label: "Médicaments", href: "/medicines", icon: Pill },
@@ -114,7 +161,6 @@ export default function OrdersPage() {
     { label: "Utilisateurs", href: "/admin/users", icon: Users },
   ];
 
-  // Fonction pour déterminer la couleur du point selon le statut
   const statusColor = (status: string) => {
     switch (status) {
       case "PENDING": return "bg-yellow-500";
@@ -126,13 +172,9 @@ export default function OrdersPage() {
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900">
-      {/* Topbar */}
       <Topbar onMenuClick={() => setMobileMenuOpen(true)} />
-
-      {/* Sidebar desktop */}
       <Sidebar />
 
-      {/* Sidebar mobile */}
       {mobileMenuOpen && (
         <div className="fixed inset-0 z-50 lg:hidden">
           <div className="fixed inset-0 bg-black/50" onClick={() => setMobileMenuOpen(false)} />
@@ -167,7 +209,6 @@ export default function OrdersPage() {
         </div>
       )}
 
-      {/* Contenu principal */}
       <main className="pt-20 lg:pl-64 p-4 md:p-8 space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
@@ -212,7 +253,6 @@ export default function OrdersPage() {
                       <span className="sm:hidden">Qté</span>
                       <span className="hidden sm:inline">Quantité</span>
                     </TableHead>
-                    {/* Colonne Statut réduite */}
                     <TableHead className="w-[6%] text-[10px] sm:text-sm text-slate-500 dark:text-slate-400 p-1 sm:p-2 pr-3 sm:pr-6">Statut</TableHead>
                     <TableHead className="w-3/12 text-[10px] sm:text-sm text-slate-500 dark:text-slate-400 p-1 sm:p-2 pl-3 sm:pl-6">Date</TableHead>
                     <TableHead className="w-2/12 text-[10px] sm:text-sm text-slate-500 dark:text-slate-400 p-1 sm:p-2">Actions</TableHead>
@@ -231,7 +271,6 @@ export default function OrdersPage() {
                       <TableCell className="text-slate-500 dark:text-slate-400 text-[10px] sm:text-sm p-1 sm:p-2">
                         {order.quantity_ordered}
                       </TableCell>
-                      {/* Point coloré avec tooltip */}
                       <TableCell className="p-1 sm:p-2 pr-3 sm:pr-6">
                         <span
                           className={`inline-block w-2.5 h-2.5 rounded-full ${statusColor(order.status)}`}
@@ -357,6 +396,58 @@ export default function OrdersPage() {
             </DialogContent>
           </Dialog>
         )}
+
+        {/* ✅ NOUVEAU : Dialogue de création de commande */}
+        <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+          <DialogContent className="dark:bg-slate-800 dark:border-slate-700">
+            <DialogHeader>
+              <DialogTitle className="text-slate-900 dark:text-white">
+                Nouvelle commande
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label className="text-slate-500 dark:text-slate-400">
+                  Médicament
+                </Label>
+                <Input
+                  value={createForm.medicine_name}
+                  readOnly
+                  className="dark:bg-slate-700 dark:text-white dark:border-slate-600"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-slate-500 dark:text-slate-400">
+                  Quantité à commander
+                </Label>
+                <Input
+                  type="number"
+                  min="1"
+                  value={createForm.quantity}
+                  onChange={(e) =>
+                    setCreateForm({
+                      ...createForm,
+                      quantity: parseInt(e.target.value, 10) || 0,
+                    })
+                  }
+                  className="dark:bg-slate-700 dark:text-white dark:border-slate-600"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setCreateDialogOpen(false)}
+                className="dark:border-slate-600 dark:text-slate-300"
+              >
+                Annuler
+              </Button>
+              <Button onClick={handleCreateOrder} disabled={creating}>
+                {creating ? "..." : "Créer la commande"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </main>
     </div>
   );
