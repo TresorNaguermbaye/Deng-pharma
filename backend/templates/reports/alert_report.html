@@ -28,20 +28,23 @@
 <body>
 
     <!-- En-tête avec logo et informations de la pharmacie -->
-    <div class="header">
-        {% if pharmacy.logo_url %}
-            <img src="{{ pharmacy.logo_url }}" alt="" class="logo" />
-            <img src={"https://res.cloudinary.com/dyx3vcyzp/image/upload/v1788107048/logo.png"} alt="" className={className} />
-        {% else %}
-            <div class="logo-placeholder">D</div>
-        {% endif %}
-        <div class="info">
-            <strong>{{ pharmacy.name }}</strong><br>
-            {{ pharmacy.address }}<br>
-            Téléphone : {{ pharmacy.phone }}<br>
-            Email : {{ pharmacy.email }}
-        </div>
+<div class="header">
+    {% if pharmacy.logo_url %}
+        <img src="{{ pharmacy.logo_url }}" alt="Logo" class="logo" />
+    {% else %}
+        <img 
+            src="https://res.cloudinary.com/dyx3vcyzp/image/upload/v1788107048/logo.png" 
+            alt="Logo DENG PHARMA" 
+            class="logo" 
+        />
+    {% endif %}
+    <div class="info">
+        <strong>{{ pharmacy.name }}</strong><br>
+        {{ pharmacy.address }}<br>
+        Téléphone : {{ pharmacy.phone }}<br>
+        Email : {{ pharmacy.email }}
     </div>
+</div>
 
     <h1>Rapport des alertes</h1>
     <table>
