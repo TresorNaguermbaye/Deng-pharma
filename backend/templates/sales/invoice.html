@@ -452,13 +452,13 @@
         
         {% if pharmacy.logo_url %}
             <img src="{{ pharmacy.logo_url }}" alt="" class="logo" />
-             <img 
+         
+        {% else %}
+                <img 
             src="https://res.cloudinary.com/dyx3vcyzp/image/upload/v1788107048/logo.png" 
             alt="Logo DENG PHARMA" 
             class="logo" 
         />
-        {% else %}
-            <div class="logo-placeholder">D</div>
         {% endif %}
 
 
