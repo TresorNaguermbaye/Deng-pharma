@@ -1171,10 +1171,10 @@ def shap_analysis(medicine_id: str):
     clean_id = medicine_id.replace('-', '').strip() if medicine_id else ''
 
     history = get_medicine_history(clean_id, days=90)
-    if not history or len(history) < 7:
+    if not history or len(history) < 1:
         return {
             "medicine_id": medicine_id,
-            "error": "Pas assez d'historique (minimum 7 jours)",
+            "error": "Pas assez d'historique (minimum 4 jours)",
             "features": [],
         }
 
