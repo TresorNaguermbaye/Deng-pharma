@@ -934,11 +934,11 @@ def predict_sales(request: PredictionRequest):
         raise HTTPException(404, f"Médicament non trouvé: {request.medicine_id}")
 
     history = get_medicine_history(request.medicine_id, days=90)
-    if not history or len(history) < 7:
+    if not history or len(history) < 4:
         raise HTTPException(
             400,
             f"Pas assez d'historique pour {request.medicine_id} "
-            f"({len(history) if history else 0} jours, minimum 7)"
+            f"({len(history) if history else 0} jours, minimum 4)"
         )
 
     meta = _get_medicine_meta(request.medicine_id)
