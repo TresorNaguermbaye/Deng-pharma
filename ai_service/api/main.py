@@ -155,8 +155,9 @@ def execute_query(query: str, params: tuple = ()) -> List[tuple]:
 def get_medicine_info(medicine_id: str) -> Optional[Dict]:
     clean_id = medicine_id.replace('-', '').strip() if medicine_id else ''
 
+    # ✅ On utilise les VRAIES colonnes : dci au lieu de generic_name/dosage_form/strength
     query = """
-        SELECT id, commercial_name, generic_name, dosage_form, strength,
+        SELECT id, commercial_name, dci, '', '',
                selling_price, purchase_price, min_stock, max_stock
         FROM medicines_medicine WHERE id = %s
     """
@@ -167,11 +168,20 @@ def get_medicine_info(medicine_id: str) -> Optional[Dict]:
 
     if not rows:
         query_like = """
-            SELECT id, commercial_name, generic_name, dosage_form, strength,
+            SELECT id, commercial_name, dci, '', '',
                    selling_price, purchase_price, min_stock, max_stock
             FROM medicines_medicine WHERE id LIKE %s
         """
         rows = execute_query(query_like, (f'%{clean_id}%',))
+
+    # ✅ Fallback : chercher par barcode (MED001)
+    if not rows:
+        query_barcode = """
+            SELECT id, commercial_name, dci, '', '',
+                   selling_price, purchase_price, min_stock, max_stock
+            FROM medicines_medicine WHERE barcode = %s
+        """
+        rows = execute_query(query_barcode, (medicine_id,))
 
     if not rows:
         return None
@@ -180,7 +190,7 @@ def get_medicine_info(medicine_id: str) -> Optional[Dict]:
     return {
         "id": str(row[0]),
         "commercial_name": row[1],
-        "generic_name": row[2] if row[2] else "",
+        "generic_name": row[2] if row[2] else "",   # dci
         "dosage_form": row[3] if row[3] else "",
         "strength": row[4] if row[4] else "",
         "selling_price": float(row[5]) if row[5] else 0,
